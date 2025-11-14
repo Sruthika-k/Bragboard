@@ -182,7 +182,8 @@ def create_shoutout(payload: ShoutoutCreate = Body(...), db: Session = Depends(g
         sender_id=current_user.id,
         message=payload.message,
         department=payload.department or current_user.department,
-        image_url=payload.image_url,
+        # Ignore image field per new requirement; do not store
+        image_url=None,
     )
     db.add(sh)
     db.commit()
@@ -416,6 +417,23 @@ def admin_delete_shoutout(sid: int, db: Session = Depends(get_db), current_user 
     s = db.query(models.Shoutout).get(sid)
     if not s:
         raise HTTPException(status_code=404, detail="Shoutout not found")
+    # Delete dependent rows first to avoid FK constraint errors
+    try:
+        db.query(models.Reaction).filter(models.Reaction.shoutout_id == sid).delete()
+    except Exception:
+        db.rollback()
+    try:
+        db.query(models.Comment).filter(models.Comment.shoutout_id == sid).delete()
+    except Exception:
+        db.rollback()
+    try:
+        db.query(models.ShoutoutRecipient).filter(models.ShoutoutRecipient.shoutout_id == sid).delete()
+    except Exception:
+        db.rollback()
+    try:
+        db.query(models.Report).filter(models.Report.shoutout_id == sid).delete()
+    except Exception:
+        db.rollback()
     db.delete(s)
     db.commit()
     return {"message": "Shoutout deleted"}
@@ -435,9 +453,14 @@ def admin_dismiss_report(rid: int, db: Session = Depends(get_db), current_user =
     r = db.query(models.Report).get(rid)
     if not r:
         raise HTTPException(status_code=404, detail="Report not found")
+    # If this report is about a comment, delete the comment as part of resolving the report
+    if r.comment_id:
+        c = db.query(models.Comment).get(r.comment_id)
+        if c:
+            db.delete(c)
     db.delete(r)
     db.commit()
-    return {"message": "Report dismissed"}
+    return {"message": "Report resolved"}
 
 @app.get("/admin/analytics")
 def admin_analytics(db: Session = Depends(get_db), current_user = Depends(get_current_user)):

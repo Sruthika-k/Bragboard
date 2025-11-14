@@ -74,10 +74,11 @@ export default function Admin() {
 
   useEffect(() => {
     if (!me || me.role !== 'admin') return
-    if (tab === 'overview') loadAnalytics()
+    if (tab === 'overview') { loadAnalytics(); loadUsers() }
+    if (tab === 'analytics') { loadAnalytics(); loadUsers() }
     if (tab === 'users') loadUsers()
-    if (tab === 'shoutouts') loadShoutouts()
-    if (tab === 'reports') loadReports()
+    if (tab === 'shoutouts') { loadShoutouts(); loadUsers() }
+    if (tab === 'reports') { loadReports(); loadUsers() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, me])
 
@@ -88,6 +89,7 @@ export default function Admin() {
   }
 
   const maxCount = (arr) => arr.reduce((m, x) => Math.max(m, x.count), 0) || 1
+  const userMap = useMemo(() => Object.fromEntries(users.map(u => [u.id, u])), [users])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -114,7 +116,7 @@ export default function Admin() {
               <div className="space-y-2">
                 {analytics.top_contributors.map((x) => (
                   <div key={x.user_id} className="flex items-center gap-2">
-                    <div className="text-sm text-gray-700">User #{x.user_id}</div>
+                    <div className="text-sm text-gray-700">{userMap[x.user_id]?.name || 'Unknown User'}</div>
                     <div className="flex-1 h-2 bg-gray-100 rounded">
                       <div className="h-2 bg-indigo-500 rounded" style={{ width: `${(x.count / maxCount(analytics.top_contributors))*100}%` }} />
                     </div>
@@ -129,7 +131,7 @@ export default function Admin() {
               <div className="space-y-2">
                 {analytics.most_tagged.map((x) => (
                   <div key={x.user_id} className="flex items-center gap-2">
-                    <div className="text-sm text-gray-700">User #{x.user_id}</div>
+                    <div className="text-sm text-gray-700">{userMap[x.user_id]?.name || 'Unknown User'}</div>
                     <div className="flex-1 h-2 bg-gray-100 rounded">
                       <div className="h-2 bg-blue-500 rounded" style={{ width: `${(x.count / maxCount(analytics.most_tagged))*100}%` }} />
                     </div>
@@ -163,14 +165,14 @@ export default function Admin() {
               <button onClick={loadUsers} className="text-sm px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200">Refresh</button>
             </div>
             <div className="divide-y">
-              {users.map(u => (
+              {users.map((u, idx) => (
                 <div key={u.id} className="flex items-center gap-3 p-3 text-sm">
-                  <div className="w-10 text-gray-500">#{u.id}</div>
+                  <div className="w-10 text-gray-500">{idx + 1}.</div>
                   <div className="flex-1">
                     <div className="font-medium text-gray-900">{u.name}</div>
                     <div className="text-gray-500">{u.email} · {u.department || '—'} · {u.role}</div>
                   </div>
-                  <button onClick={async () => { await adminDeleteUser(u.id); loadUsers() }} className="px-3 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100">Delete</button>
+                  {/* Admin no longer deletes users */}
                 </div>
               ))}
             </div>
@@ -184,14 +186,14 @@ export default function Admin() {
               <button onClick={loadShoutouts} className="text-sm px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200">Refresh</button>
             </div>
             <div className="divide-y">
-              {shoutouts.map(s => (
+              {shoutouts.map((s, idx) => (
                 <div key={s.id} className="flex items-center gap-3 p-3 text-sm">
-                  <div className="w-10 text-gray-500">#{s.id}</div>
+                  <div className="w-10 text-gray-500">{idx + 1}.</div>
                   <div className="flex-1">
                     <div className="text-gray-900">{s.message}</div>
-                    <div className="text-gray-500">Sender: {s.sender_id} · Dept: {s.department || '—'}</div>
+                    <div className="text-gray-500">Sender: {userMap[s.sender_id]?.name || 'Unknown User'} · Dept: {s.department || '—'}</div>
                   </div>
-                  <button onClick={async () => { await adminDeleteShoutout(s.id); loadShoutouts() }} className="px-3 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100">Delete</button>
+                  <button onClick={async () => { try { await adminDeleteShoutout(s.id); setShoutouts(prev => prev.filter(x => x.id !== s.id)) } catch {} }} className="px-3 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100">Delete</button>
                 </div>
               ))}
             </div>
@@ -205,14 +207,14 @@ export default function Admin() {
               <button onClick={loadReports} className="text-sm px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200">Refresh</button>
             </div>
             <div className="divide-y">
-              {reports.map(r => (
+              {reports.map((r, idx) => (
                 <div key={r.id} className="flex items-center gap-3 p-3 text-sm">
-                  <div className="w-10 text-gray-500">#{r.id}</div>
+                  <div className="w-10 text-gray-500">{idx + 1}.</div>
                   <div className="flex-1">
                     <div className="text-gray-900">Reason: {r.reason}</div>
-                    <div className="text-gray-500">Shoutout: {r.shoutout_id || '—'} · Comment: {r.comment_id || '—'} · Reporter: {r.reported_by}</div>
+                    <div className="text-gray-500">Shoutout: {r.shoutout_id || '—'} · Comment: {r.comment_id || '—'} · Reporter: {userMap[r.reported_by]?.name || 'Unknown User'}</div>
                   </div>
-                  <button onClick={async () => { await adminDismissReport(r.id); loadReports() }} className="px-3 py-1.5 rounded-md bg-gray-100 border border-gray-200 hover:bg-gray-200">Dismiss</button>
+                  <button onClick={async () => { try { const res = await adminDismissReport(r.id); alert(res?.message || 'Report Resolved'); setReports(prev => prev.filter(x => x.id !== r.id)) } catch {} }} className="px-3 py-1.5 rounded-md bg-gray-100 border border-gray-200 hover:bg-gray-200">Dismiss</button>
                 </div>
               ))}
             </div>
@@ -226,7 +228,7 @@ export default function Admin() {
               <div className="space-y-2">
                 {analytics.top_contributors.map(x => (
                   <div key={x.user_id} className="flex items-center gap-2">
-                    <div className="text-sm text-gray-700">User #{x.user_id}</div>
+                    <div className="text-sm text-gray-700">{userMap[x.user_id]?.name || 'Unknown User'}</div>
                     <div className="flex-1 h-2 bg-gray-100 rounded"><div className="h-2 bg-indigo-500 rounded" style={{ width: `${(x.count / maxCount(analytics.top_contributors))*100}%` }} /></div>
                     <div className="text-xs text-gray-500 w-8 text-right">{x.count}</div>
                   </div>
@@ -238,7 +240,7 @@ export default function Admin() {
               <div className="space-y-2">
                 {analytics.most_tagged.map(x => (
                   <div key={x.user_id} className="flex items-center gap-2">
-                    <div className="text-sm text-gray-700">User #{x.user_id}</div>
+                    <div className="text-sm text-gray-700">{userMap[x.user_id]?.name || 'Unknown User'}</div>
                     <div className="flex-1 h-2 bg-gray-100 rounded"><div className="h-2 bg-blue-500 rounded" style={{ width: `${(x.count / maxCount(analytics.most_tagged))*100}%` }} /></div>
                     <div className="text-xs text-gray-500 w-8 text-right">{x.count}</div>
                   </div>

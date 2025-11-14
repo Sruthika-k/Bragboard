@@ -11,7 +11,6 @@ export default function PostModal({ open, onClose, onPosted }) {
     recipient_ids: [],
     department: '',
     message: '',
-    image_url: '',
   })
 
   useEffect(() => {
@@ -48,11 +47,10 @@ export default function PostModal({ open, onClose, onPosted }) {
         message: form.message,
         department: form.department || undefined,
         recipient_ids: form.recipient_ids,
-        image_url: form.image_url || undefined,
       })
       onPosted?.()
       onClose?.()
-      setForm({ recipient_ids: [], department: '', message: '', image_url: '' })
+      setForm({ recipient_ids: [], department: '', message: '' })
     } catch (e) {
       setError('Failed to post. Check your connection and login.')
     } finally {
@@ -104,16 +102,6 @@ export default function PostModal({ open, onClose, onPosted }) {
               value={form.message}
               onChange={(e) => setForm(p => ({ ...p, message: e.target.value }))}
               placeholder="Write a recognition message..."
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Image URL (optional)</label>
-            <input
-              className="w-full px-3 py-2 border rounded-md"
-              value={form.image_url}
-              onChange={(e) => setForm(p => ({ ...p, image_url: e.target.value }))}
-              placeholder="https://..."
             />
           </div>
 
