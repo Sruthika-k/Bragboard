@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { addComment, fetchComments, reportComment, fetchUsers } from '../lib/api'
+import { fetchMe, adminDeleteComment } from '../lib/api'
 
 export default function Comments({ shoutoutId }) {
   const [items, setItems] = useState([])
@@ -11,6 +12,8 @@ export default function Comments({ shoutoutId }) {
   const [users, setUsers] = useState([])
   const [openSuggest, setOpenSuggest] = useState(false)
   const [filtered, setFiltered] = useState([])
+  const [me, setMe] = useState(null)
+  const [openMenus, setOpenMenus] = useState({})
 
   async function load() {
     setLoading(true)
@@ -34,8 +37,14 @@ export default function Comments({ shoutoutId }) {
     let mounted = true
     async function loadUsers() {
       try {
-        const list = await fetchUsers()
-        if (mounted) setUsers(list || [])
+        const [list, meRes] = await Promise.all([
+          fetchUsers(),
+          fetchMe().catch(() => null),
+        ])
+        if (mounted) {
+          setUsers(list || [])
+          setMe(meRes)
+        }
       } catch {}
     }
     loadUsers()
@@ -114,26 +123,51 @@ export default function Comments({ shoutoutId }) {
       {loading && <div className="text-gray-500 text-sm">Loading comments...</div>}
       {error && <div className="text-red-600 text-sm">{error}</div>}
       {!loading && !items.length && <div className="text-gray-500 text-sm">No comments yet.</div>}
-      <div className="space-y-2">
+      <div className="space-y-3">
         {items.map(c => (
           <div key={c.id} className="text-sm">
-            <div className="flex items-center gap-2">
-              {c.user ? (
-                <Link to={`/profile/${c.user.id}`} className="font-medium text-gray-900 hover:underline">{c.user.name}</Link>
-              ) : (
-                <span className="font-medium text-gray-900">User</span>
-              )}
-              {c.created_at && <span className="text-gray-400">{new Date(c.created_at).toLocaleString()}</span>}
-              <button
-                onClick={async () => {
-                  const reason = window.prompt('Report comment reason?')
-                  if (!reason) return
-                  try { await reportComment({ comment_id: c.id, reason }) } catch {}
-                }}
-                className="ml-auto px-2 py-1 rounded-md bg-red-50 text-red-700 hover:bg-red-100 border border-red-100"
-              >Report</button>
+            <div className="flex items-start gap-2">
+              {/* Initials avatar */}
+              <div className="h-8 w-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-semibold">
+                {c.user?.name ? c.user.name.split(' ').map(p => p[0]).slice(0,2).join('').toUpperCase() : 'U'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  {c.user ? (
+                    <Link to={`/profile/${c.user.id}`} className="font-medium text-gray-900 hover:underline truncate">{c.user.name}</Link>
+                  ) : (
+                    <span className="font-medium text-gray-900">User</span>
+                  )}
+                  {c.created_at && <span className="text-gray-400">{new Date(c.created_at).toLocaleString()}</span>}
+                  <div className="relative ml-auto">
+                    <button onClick={() => setOpenMenus(p => ({ ...p, [c.id]: !p[c.id] }))} className="px-2 py-1 rounded-md hover:bg-gray-100">⋯</button>
+                    {openMenus[c.id] && (
+                      <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-md w-40 z-10">
+                        {me?.role === 'admin' && (
+                          <button
+                            onClick={async () => {
+                              try { await adminDeleteComment(c.id); await load() } catch {}
+                              setOpenMenus(p => ({ ...p, [c.id]: false }))
+                            }}
+                            className="w-full text-left px-3 py-2 text-red-700 hover:bg-red-50"
+                          >Delete</button>
+                        )}
+                        <button
+                          onClick={async () => {
+                            const reason = window.prompt('Report comment reason?')
+                            if (!reason) return
+                            try { await reportComment({ comment_id: c.id, reason }) } catch {}
+                            setOpenMenus(p => ({ ...p, [c.id]: false }))
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                        >Report</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-1 text-gray-800">{c.content}</div>
+              </div>
             </div>
-            <div className="text-gray-800">{c.content}</div>
           </div>
         ))}
       </div>

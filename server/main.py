@@ -129,6 +129,7 @@ class ShoutoutOut(BaseModel):
     created_at: Optional[str] = None
     recipients: List[UserOut] = []
     reactions: dict = {}
+    reactors: Dict[str, List[UserOut]] = {}
     comments_count: int = 0
 
     class Config:
@@ -171,6 +172,43 @@ def list_users(db: Session = Depends(get_db)):
         role_val = getattr(u.role, "value", str(u.role)) if u.role is not None else "employee"
         out.append(UserOut(id=u.id, name=u.name, email=u.email, department=u.department, role=role_val))
     return out
+
+# ------------------------------
+# User: update own profile (except email)
+# ------------------------------
+class MeUpdate(BaseModel):
+    name: Optional[str] = None
+    department: Optional[str] = None
+    designation: Optional[str] = None
+    profile_pic: Optional[str] = None
+    password: Optional[str] = None
+
+@app.put("/user/me")
+def update_me(payload: MeUpdate = Body(...), db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    changed = False
+    if payload.name is not None:
+        current_user.name = payload.name
+        changed = True
+    if payload.department is not None:
+        current_user.department = payload.department
+        changed = True
+    if payload.designation is not None:
+        current_user.designation = payload.designation
+        changed = True
+    if payload.profile_pic is not None:
+        current_user.profile_pic = payload.profile_pic
+        changed = True
+    if payload.password is not None and payload.password.strip():
+        try:
+            current_user.password = auth.hash_password(payload.password)
+            changed = True
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid password")
+    if not changed:
+        return {"message": "No changes"}
+    db.add(current_user)
+    db.commit()
+    return {"message": "Profile updated"}
 
 # ------------------------------
 # Shoutouts: create and feed
@@ -222,15 +260,22 @@ def get_feed(department: Optional[str] = None, db: Session = Depends(get_db), cu
             if u:
                 role_val = getattr(u.role, "value", str(u.role)) if u.role is not None else "employee"
                 rec_users.append(UserOut(id=u.id, name=u.name, email=u.email, department=u.department, role=role_val))
-        # Reaction counts if table exists
+        # Reactions: counts and reactors per type
+        reaction_counts = {"like": 0, "clap": 0, "star": 0}
+        reactors_map: Dict[str, List[UserOut]] = {"like": [], "clap": [], "star": []}
         try:
-            reaction_counts = {
-                "like": db.query(models.Reaction).filter(models.Reaction.shoutout_id == sh.id, models.Reaction.type == models.ReactionType.like).count(),
-                "clap": db.query(models.Reaction).filter(models.Reaction.shoutout_id == sh.id, models.Reaction.type == models.ReactionType.clap).count(),
-                "star": db.query(models.Reaction).filter(models.Reaction.shoutout_id == sh.id, models.Reaction.type == models.ReactionType.star).count(),
-            }
+            react_rows = db.query(models.Reaction).filter(models.Reaction.shoutout_id == sh.id).all()
+            for rr in react_rows:
+                u = user_map.get(rr.user_id)
+                if not u:
+                    continue
+                type_val = getattr(rr.type, "value", str(rr.type))
+                if type_val in reaction_counts:
+                    reaction_counts[type_val] += 1
+                    role_val = getattr(u.role, "value", str(u.role)) if u.role is not None else "employee"
+                    reactors_map[type_val].append(UserOut(id=u.id, name=u.name, email=u.email, department=u.department, role=role_val))
         except Exception:
-            reaction_counts = {"like": 0, "clap": 0, "star": 0}
+            pass
         try:
             comments_count = db.query(models.Comment).filter(models.Comment.shoutout_id == sh.id).count()
         except Exception:
@@ -244,6 +289,7 @@ def get_feed(department: Optional[str] = None, db: Session = Depends(get_db), cu
             "created_at": getattr(sh, "created_at", None).isoformat() if getattr(sh, "created_at", None) else None,
             "recipients": [ru.dict() for ru in rec_users],
             "reactions": reaction_counts,
+            "reactors": {k: [ru.dict() for ru in v] for k, v in reactors_map.items()},
             "comments_count": comments_count,
         })
     return {"items": results}
@@ -437,6 +483,21 @@ def admin_delete_shoutout(sid: int, db: Session = Depends(get_db), current_user 
     db.delete(s)
     db.commit()
     return {"message": "Shoutout deleted"}
+
+@app.delete("/admin/comments/{cid}")
+def admin_delete_comment(cid: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    ensure_admin(current_user)
+    c = db.query(models.Comment).get(cid)
+    if not c:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    # Remove reports related to this comment
+    try:
+        db.query(models.Report).filter(models.Report.comment_id == cid).delete()
+    except Exception:
+        db.rollback()
+    db.delete(c)
+    db.commit()
+    return {"message": "Comment deleted"}
 
 @app.get("/admin/reports")
 def admin_reports(db: Session = Depends(get_db), current_user = Depends(get_current_user)):

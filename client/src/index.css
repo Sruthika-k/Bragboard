@@ -2,3 +2,27 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Global UI safety: prevent selection/focus on non-editable elements */
+html, body, #root {
+  height: 100%;
+}
+
+/* Disable text selection globally, but allow in form fields */
+* {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+input, textarea, select, [contenteditable="true"], .selectable, .prose, .allow-select, .cm-content {
+  user-select: text;
+}
+
+/* Remove default outlines from non-interactive elements */
+div:focus, section:focus, header:focus, main:focus, footer:focus, span:focus, p:focus, ul:focus, li:focus {
+  outline: none !important;
+}
+
+/* Keep focus styles for interactive controls for accessibility (tailwind handles focus rings on buttons/links) */
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: none;
+}

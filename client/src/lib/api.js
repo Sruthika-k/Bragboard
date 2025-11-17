@@ -38,6 +38,9 @@ export const addComment = async (payload) => (await api.post('/comment/add', pay
 export const reportShoutout = async (payload) => (await api.post('/shoutout/report', payload)).data
 export const reportComment = async (payload) => (await api.post('/comment/report', payload)).data
 
+// Profile update
+export const updateMe = async (payload) => (await api.put('/user/me', payload)).data
+
 // Admin
 export const adminUsers = async () => (await api.get('/admin/users')).data
 export const adminDeleteUser = async (id) => (await api.delete(`/admin/users/${id}`)).data
@@ -46,3 +49,4 @@ export const adminDeleteShoutout = async (sid) => (await api.delete(`/admin/shou
 export const adminReports = async () => (await api.get('/admin/reports')).data
 export const adminDismissReport = async (rid) => (await api.post(`/admin/reports/${rid}/dismiss`)).data
 export const adminAnalytics = async () => (await api.get('/admin/analytics')).data
+export const adminDeleteComment = async (cid) => (await api.delete(`/admin/comments/${cid}`)).data

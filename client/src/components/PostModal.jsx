@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
-import { createShoutout, fetchDepartments, fetchUsers } from '../lib/api'
+import { createShoutout, fetchUsers, fetchMe } from '../lib/api'
 
 export default function PostModal({ open, onClose, onPosted }) {
   const [users, setUsers] = useState([])
-  const [departments, setDepartments] = useState([])
+  const [departments, setDepartments] = useState([]) // no longer shown; kept to minimize changes
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [me, setMe] = useState(null)
 
   const [form, setForm] = useState({
     recipient_ids: [],
-    department: '',
     message: '',
   })
 
@@ -18,10 +18,11 @@ export default function PostModal({ open, onClose, onPosted }) {
     let mounted = true
     async function load() {
       try {
-        const [u, d] = await Promise.all([fetchUsers(), fetchDepartments()])
+        const [u, meRes] = await Promise.all([fetchUsers(), fetchMe().catch(()=>null)])
         if (!mounted) return
         setUsers(u)
-        setDepartments(d.departments || [])
+        setMe(meRes)
+        setDepartments([])
       } catch (e) {
         // ignore
       }
@@ -45,12 +46,11 @@ export default function PostModal({ open, onClose, onPosted }) {
       setLoading(true)
       await createShoutout({
         message: form.message,
-        department: form.department || undefined,
         recipient_ids: form.recipient_ids,
       })
       onPosted?.()
       onClose?.()
-      setForm({ recipient_ids: [], department: '', message: '' })
+      setForm({ recipient_ids: [], message: '' })
     } catch (e) {
       setError('Failed to post. Check your connection and login.')
     } finally {
@@ -72,27 +72,26 @@ export default function PostModal({ open, onClose, onPosted }) {
 
           <div>
             <label className="block text-sm text-gray-600 mb-1">Recipients</label>
-            <div className="max-h-28 overflow-auto border rounded-md divide-y">
-              {users.map(u => (
-                <label key={u.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                  <input type="checkbox" checked={form.recipient_ids.includes(u.id)} onChange={() => toggleRecipient(u.id)} />
-                  <span>{u.name} <span className="text-gray-400">({u.department || '—'})</span></span>
-                </label>
-              ))}
+            <div className="max-h-64 overflow-auto border rounded-md divide-y">
+              {(() => {
+                const myDept = me?.department || ''
+                const sorted = [...users].sort((a,b) => {
+                  const aIn = (a.department||'') === myDept
+                  const bIn = (b.department||'') === myDept
+                  if (aIn !== bIn) return aIn ? -1 : 1
+                  return (a.name||'').localeCompare(b.name||'')
+                })
+                return sorted.map(u => (
+                  <label key={u.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                    <input type="checkbox" checked={form.recipient_ids.includes(u.id)} onChange={() => toggleRecipient(u.id)} />
+                    <span>{u.name} <span className="text-gray-400">({u.department || '—'})</span></span>
+                  </label>
+                ))
+              })()}
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Department</label>
-            <select
-              className="w-full px-3 py-2 border rounded-md"
-              value={form.department}
-              onChange={(e) => setForm(p => ({ ...p, department: e.target.value }))}
-            >
-              <option value="">Auto (yours)</option>
-              {departments.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
+          {/* Department selection removed; backend uses sender's department automatically */}
 
           <div>
             <label className="block text-sm text-gray-600 mb-1">Message</label>

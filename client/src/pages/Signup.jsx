@@ -129,7 +129,6 @@ export default function Signup() {
         password: registerState.password,
         department: registerState.department,
         role: 'employee',
-        joined_at: new Date().toISOString(),
       }, { timeout: 8000 })
 
       if (res.status === 200) {
@@ -203,20 +202,23 @@ export default function Signup() {
               Department
               <span className="text-red-500">*</span>
             </label>
-            <select
-              id="department"
-              name="department"
-              value={registerState.department}
-              onChange={handleChange}
-              required
-              className={`w-full px-4 py-3 rounded-xl border ${registerError.department ? 'border-red-500' : 'border-gray-200'} bg-white shadow-sm text-gray-900 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 hover:border-gray-300`}
-              aria-invalid={registerError.department ? 'true' : 'false'}
-            >
-              <option value="" disabled>Select your team's department</option>
-              {DEPARTMENTS.map(dept => (
-                <option key={dept} value={dept}>{dept}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                id="department"
+                name="department"
+                value={registerState.department}
+                onChange={handleChange}
+                required
+                className={`w-full px-4 py-3 pr-10 rounded-xl border ${registerError.department ? 'border-red-500' : 'border-gray-200'} bg-white shadow-sm text-gray-900 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 hover:border-gray-300 appearance-none cursor-pointer`}
+                aria-invalid={registerError.department ? 'true' : 'false'}
+              >
+                <option value="" disabled>Select your team's department</option>
+                {DEPARTMENTS.map(dept => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">▾</span>
+            </div>
             {registerError.department && (
               <p className="text-sm text-red-500 mt-1">{registerError.department}</p>
             )}

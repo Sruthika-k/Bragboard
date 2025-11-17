@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import PostModal from '../components/PostModal'
 import Feed from '../components/Feed'
@@ -7,6 +7,7 @@ import { fetchUsers, fetchDepartments } from '../lib/api'
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [dept, setDept] = useState('all')
   const [senderId, setSenderId] = useState('')
   const [date, setDate] = useState('')
@@ -14,6 +15,11 @@ export default function Dashboard() {
   const [showPost, setShowPost] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [senders, setSenders] = useState([])
+  const scrollToId = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const sid = params.get('sid')
+    return sid ? Number(sid) : null
+  }, [location.search])
 
   useEffect(() => {
     const token = localStorage.getItem('access_token')
@@ -92,7 +98,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <Feed department={dept} senderId={senderId} date={date} refreshKey={refreshKey} />
+        <Feed department={dept} senderId={senderId} date={date} refreshKey={refreshKey} scrollToId={scrollToId} />
       </main>
 
       <PostModal

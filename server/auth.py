@@ -109,23 +109,28 @@ class LoginRequest(BaseModel):
 # -------------------
 @router.post("/register")
 def register(user_data: UserRegister, db: Session = Depends(database.get_db)):
-    # 1. Check for existing user
-    existing_user = db.query(models.User).filter(models.User.email == user_data.email).first()
+    # Normalize email
+    norm_email = (user_data.email or "").strip().lower()
+    if not norm_email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    # 1. Check for existing user (normalized)
+    existing_user = db.query(models.User).filter(models.User.email == norm_email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # 2. Hash password - FIXED: Changed get_password_hash() to the correct hash_password()
+
+    # 2. Hash password
     hashed_password = hash_password(user_data.password)
-    
-    # 3. Create new user object
+
+    # 3. Create new user object (store normalized email)
     user = models.User(
         name=user_data.name,
-        email=user_data.email,
+        email=norm_email,
         password=hashed_password,
         department=user_data.department,
-        role=user_data.role
+        role=user_data.role,
     )
-    
+
     # 4. Save to database
     try:
         db.add(user)
@@ -133,10 +138,10 @@ def register(user_data: UserRegister, db: Session = Depends(database.get_db)):
         db.refresh(user)
     except Exception as e:
         db.rollback()
-        # This catches errors like database connection loss or schema mismatch
         print(f"Database save error during registration: {e}")
-        raise HTTPException(status_code=500, detail="An error occurred while saving user data.")
-        
+        # Return actual error detail to distinguish DB issues from duplicates
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
     return {"message": "User created successfully", "user_id": user.id}
 
 # -------------------
@@ -144,7 +149,9 @@ def register(user_data: UserRegister, db: Session = Depends(database.get_db)):
 # -------------------
 @router.post("/login")
 def login(request: LoginRequest, db: Session = Depends(database.get_db)):
-    user = db.query(models.User).filter(models.User.email == request.email).first()
+    # Normalize email for lookup
+    norm_email = (request.email or "").strip().lower()
+    user = db.query(models.User).filter(models.User.email == norm_email).first()
     if not user or not verify_password(request.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token({"sub": str(user.id)})
