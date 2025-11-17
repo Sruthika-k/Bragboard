@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchFeed, fetchUsers, toggleReaction, reportShoutout, fetchMe, adminDeleteShoutout } from '../lib/api'
+import { API_BASE_URL } from '../config'
 import Comments from './Comments'
 
 export default function Feed({ department = 'all', senderId = null, taggedUserId = null, date = null, refreshKey = 0, scrollToId = null }) {
@@ -115,6 +116,9 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
           clap: me ? (reactors.clap || []).some(u => u.id === me.id) : false,
           star: me ? (reactors.star || []).some(u => u.id === me.id) : false,
         }
+        const imageSrc = item.image_url
+          ? (item.image_url.startsWith('http') ? item.image_url : `${API_BASE_URL}${item.image_url}`)
+          : null
         return (
           <div
             key={item.id}
@@ -146,6 +150,15 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
             )}
 
             <div className="mt-3 text-gray-900">{item.message}</div>
+            {imageSrc && (
+              <div className="mt-3">
+                <img
+                  src={imageSrc}
+                  alt="Shout-out attachment"
+                  className="max-h-80 rounded-lg border border-gray-200 object-contain"
+                />
+              </div>
+            )}
 
             <div className="mt-4 flex items-center gap-3 text-sm">
               {/* Like */}
@@ -214,7 +227,12 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
                         stop(e)
                         const reason = window.prompt('Report reason?')
                         if (!reason) return
-                        try { await reportShoutout({ shoutout_id: item.id, reason }) } catch {}
+                        try {
+                          await reportShoutout({ shoutout_id: item.id, reason })
+                        } catch (err) {
+                          const msg = err?.response?.data?.detail || 'Failed to submit report. Please try again.'
+                          alert(msg)
+                        }
                         setOpenMenus(p => ({ ...p, [item.id]: false }))
                       }}
                       className="w-full text-left px-3 py-2 hover:bg-gray-50"

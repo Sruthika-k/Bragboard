@@ -60,7 +60,8 @@ export default function Comments({ shoutoutId }) {
       setText('')
       await load()
     } catch (e) {
-      // swallow
+      const msg = e?.response?.data?.detail || 'Failed to post comment. Please try again.'
+      setError(msg)
     } finally {
       setPosting(false)
     }
@@ -156,7 +157,12 @@ export default function Comments({ shoutoutId }) {
                           onClick={async () => {
                             const reason = window.prompt('Report comment reason?')
                             if (!reason) return
-                            try { await reportComment({ comment_id: c.id, reason }) } catch {}
+                            try {
+                              await reportComment({ comment_id: c.id, reason })
+                            } catch (e) {
+                              const msg = e?.response?.data?.detail || 'Failed to submit report. Please try again.'
+                              setError(msg)
+                            }
                             setOpenMenus(p => ({ ...p, [c.id]: false }))
                           }}
                           className="w-full text-left px-3 py-2 hover:bg-gray-50"

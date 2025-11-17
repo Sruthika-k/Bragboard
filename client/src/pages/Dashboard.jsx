@@ -68,7 +68,6 @@ export default function Dashboard() {
               onChange={(e) => setDept(e.target.value)}
             >
               <option value="all">All</option>
-              <option value="mine">Mine</option>
               {departments.map(d => (
                 <option key={d} value={d}>{d}</option>
               ))}

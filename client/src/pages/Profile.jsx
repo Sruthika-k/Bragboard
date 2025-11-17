@@ -74,8 +74,9 @@ export default function Profile() {
       setForm(p => ({ ...p, name: next }))
       setMsg('Profile updated')
       setShowSuccess(true)
-    } catch {
-      setMsg('Failed to update')
+    } catch (e) {
+      const detail = e?.response?.data?.detail || 'Failed to update profile.'
+      setMsg(detail)
     } finally {
       setSaving(false)
       setShowNameModal(false)

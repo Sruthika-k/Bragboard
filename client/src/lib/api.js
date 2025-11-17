@@ -27,6 +27,7 @@ export const fetchMe = async () => (await api.get('/user/me')).data
 export const fetchUsers = async () => (await api.get('/users')).data
 export const fetchDepartments = async () => (await api.get('/departments')).data
 export const createShoutout = async (payload) => (await api.post('/shoutout/create', payload)).data
+export const createShoutoutWithImage = async (formData) => (await api.post('/shoutout/create-with-image', formData, { headers: { 'Content-Type': 'multipart/form-data' } })).data
 export const fetchFeed = async (params) => (await api.get('/shoutout/feed', { params })).data
 export const toggleReaction = async (payload) => (await api.post('/reaction/toggle', payload)).data
 
@@ -50,3 +51,4 @@ export const adminReports = async () => (await api.get('/admin/reports')).data
 export const adminDismissReport = async (rid) => (await api.post(`/admin/reports/${rid}/dismiss`)).data
 export const adminAnalytics = async () => (await api.get('/admin/analytics')).data
 export const adminDeleteComment = async (cid) => (await api.delete(`/admin/comments/${cid}`)).data
+export const adminNotifications = async () => (await api.get('/admin/notifications')).data

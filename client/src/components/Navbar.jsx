@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { fetchDepartments, fetchMe, fetchFeed, fetchUsers } from '../lib/api'
+import { fetchDepartments, fetchMe, fetchFeed, fetchUsers, adminNotifications } from '../lib/api'
 
 export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
   const [departments, setDepartments] = useState([])
@@ -13,6 +13,7 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
   const [users, setUsers] = useState([])
   const [hasNew, setHasNew] = useState(false)
   const [lastSeenAt, setLastSeenAt] = useState(0)
+  const notifRef = useRef(null)
 
   useEffect(() => {
     let mounted = true
@@ -73,14 +74,38 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
           const recIds = (it.recipients || []).map(r => r.id)
           const reactors = it.reactors || { like: [], clap: [], star: [] }
           const anyReactor = [...(reactors.like||[]), ...(reactors.clap||[]), ...(reactors.star||[])]
-          const tagged = recIds.includes(me.id)
+          const tagged = recIds.includes(me.id) && it.sender_id !== me.id
           const reactedToMine = it.sender_id === me.id && anyReactor.some(u => u.id !== me.id)
           const commentedOnMine = it.sender_id === me.id && (it.comments_count || 0) > 0
-          return tagged || reactedToMine || commentedOnMine
+          const taggedInComments = Boolean(it.tagged_in_comments)
+          return tagged || reactedToMine || commentedOnMine || taggedInComments
         }).slice(0, 5)
-        setNotifs(filtered)
+        let items = filtered
+
+        // Admin-specific notifications: profile changes and reports
+        if (me && me.role === 'admin') {
+          try {
+            const adminRes = await adminNotifications()
+            const adminItems = (adminRes.items || [])
+              // Do not notify admin about their own profile changes
+              .filter(x => !(x.type === 'user_change' && x.target_id === me.id))
+              .map((x) => ({ ...x, _admin: true }))
+            items = [...adminItems, ...items]
+          } catch {}
+        }
+
+        // Deduplicate notifications by logical key
+        const seen = new Set()
+        items = items.filter(it => {
+          const key = it._admin ? `admin-${it.type}-${it.id}` : `feed-${it.id}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+
+        setNotifs(items)
         // Determine if there are new notifications since last seen
-        const newestTs = Math.max(0, ...filtered.map(it => it.created_at ? Date.parse(it.created_at) : 0))
+        const newestTs = Math.max(0, ...items.map(it => it.created_at ? Date.parse(it.created_at) : 0))
         if (newestTs && newestTs > lastSeenAt) setHasNew(true)
       } catch {}
     }
@@ -95,24 +120,57 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
     setHasNew(Boolean(newestTs && newestTs > lastSeenAt))
   }, [notifs, lastSeenAt])
 
+  // Close notifications dropdown when clicking outside
+  useEffect(() => {
+    if (!openNotif) return
+    const handler = (e) => {
+      if (!notifRef.current) return
+      if (!notifRef.current.contains(e.target)) {
+        setOpenNotif(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+    }
+  }, [openNotif])
+
   // Helper to build friendly notification text based on current user context
   const friendlyNotif = (item) => {
     try {
+      // Admin notifications
+      if (item._admin) {
+        if (item.type === 'user_change') {
+          if ((item.action || '').startsWith('username_change:')) {
+            return 'A user changed their username.'
+          }
+          if (item.action === 'password_change') {
+            return 'A user changed their password.'
+          }
+        }
+        if (item.type === 'report') {
+          return 'A new report has been filed.'
+        }
+      }
+
       const reactors = item.reactors || { like: [], clap: [], star: [] }
       const senderId = item.sender_id
       const recips = (item.recipients || []).map(r => r.id)
       if (me) {
-        if (recips.includes(me.id)) return 'You were tagged in a shoutout.'
+        if (recips.includes(me.id)) {
+          const senderName = nameOf(senderId)
+          return `${senderName} tagged you in a shoutout`
+        }
         if (senderId === me.id) {
           // Prefer showing reaction or comment activity on your post
           const allReactors = [...(reactors.like||[]), ...(reactors.clap||[]), ...(reactors.star||[])]
           const other = allReactors.find(u => u.id !== me.id)
-          if (other) return `${other.name} reacted to your post.`
-          if ((item.comments_count || 0) > 0) return 'Someone commented on your shoutout.'
+          if (other) return `${other.name} reacted to your post`
+          if ((item.comments_count || 0) > 0) return 'Someone commented on your shoutout'
         }
       }
       // Fallback
-      return `New shoutout from ${item.sender_id ? `User #${item.sender_id}` : 'someone'}.`
+      return `New shoutout from ${item.sender_id ? nameOf(item.sender_id) : 'someone'}`
     } catch {
       return 'New activity on BragBoard.'
     }
@@ -134,7 +192,7 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
 
         <div className="h-6 w-px bg-gray-200 mx-2" />
 
-        <div className="relative flex items-center gap-3">
+        <div ref={notifRef} className="relative flex items-center gap-3">
           {/* Notifications */}
           <button onClick={() => { 
               setOpenNotif(o => !o)
@@ -155,7 +213,20 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
               <div className="max-h-80 overflow-auto divide-y">
                 {notifs.length === 0 && <div className="p-3 text-sm text-gray-500">No recent activity</div>}
                 {notifs.map(n => (
-                  <button key={n.id || Math.random()} onClick={() => { setOpenNotif(false); n?.id ? navigate(`/dashboard?sid=${n.id}`) : navigate('/dashboard') }} className="w-full text-left p-3 hover:bg-gray-50">
+                  <button
+                    key={n.id || Math.random()}
+                    onClick={() => {
+                      setOpenNotif(false)
+                      if (n._admin && n.type === 'report') {
+                        const rid = n.id ? String(n.id) : ''
+                        const search = rid ? `?tab=reports&reportId=${encodeURIComponent(rid)}` : '?tab=reports'
+                        navigate(`/admin${search}`)
+                        return
+                      }
+                      n?.id ? navigate(`/dashboard?sid=${n.id}`) : navigate('/dashboard')
+                    }}
+                    className="w-full text-left p-3 hover:bg-gray-50"
+                  >
                     <div className="flex items-start gap-3">
                       <div className="h-8 w-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-semibold">
                         {(() => {

@@ -5,6 +5,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 from pydantic import BaseModel
+import re
 import os
 from passlib.context import CryptContext
 
@@ -114,20 +115,37 @@ def register(user_data: UserRegister, db: Session = Depends(database.get_db)):
     if not norm_email:
         raise HTTPException(status_code=400, detail="Email is required")
 
+    # Validate email provider (Gmail/Outlook/Hotmail/Yahoo)
+    email_pattern = re.compile(r"^[^@]+@(gmail\.com|outlook\.com|hotmail\.com|yahoo\.com)$")
+    if not email_pattern.match(norm_email):
+        raise HTTPException(status_code=400, detail="Only Gmail, Outlook/Hotmail, or Yahoo email addresses are allowed")
+
+    # Validate name and department
+    name = (user_data.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    dept = (user_data.department or "").strip() if user_data.department is not None else ""
+    if not dept:
+        raise HTTPException(status_code=400, detail="Department is required")
+
     # 1. Check for existing user (normalized)
     existing_user = db.query(models.User).filter(models.User.email == norm_email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # 2. Hash password
-    hashed_password = hash_password(user_data.password)
+    # 2. Validate password strength then hash
+    pwd = user_data.password or ""
+    pwd_pattern = re.compile(r"^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$")
+    if not pwd_pattern.match(pwd):
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters and include an uppercase letter, a number, and a special character")
+    hashed_password = hash_password(pwd)
 
     # 3. Create new user object (store normalized email)
     user = models.User(
-        name=user_data.name,
+        name=name,
         email=norm_email,
         password=hashed_password,
-        department=user_data.department,
+        department=dept,
         role=user_data.role,
     )
 

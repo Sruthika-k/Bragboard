@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { createShoutout, fetchUsers, fetchMe } from '../lib/api'
+import { createShoutout, createShoutoutWithImage, fetchUsers, fetchMe } from '../lib/api'
 
 export default function PostModal({ open, onClose, onPosted }) {
   const [users, setUsers] = useState([])
@@ -7,6 +7,7 @@ export default function PostModal({ open, onClose, onPosted }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [me, setMe] = useState(null)
+  const [imageFile, setImageFile] = useState(null)
 
   const [form, setForm] = useState({
     recipient_ids: [],
@@ -41,18 +42,28 @@ export default function PostModal({ open, onClose, onPosted }) {
   const submit = async (e) => {
     e.preventDefault()
     setError('')
-    if (!form.message.trim()) { setError('Please enter a message.'); return }
+    if (!form.message.trim()) { setError('Message cannot be blank.'); return }
     try {
       setLoading(true)
-      await createShoutout({
-        message: form.message,
-        recipient_ids: form.recipient_ids,
-      })
+      if (imageFile) {
+        const fd = new FormData()
+        fd.append('message', form.message)
+        fd.append('recipient_ids', JSON.stringify(form.recipient_ids || []))
+        fd.append('file', imageFile)
+        await createShoutoutWithImage(fd)
+      } else {
+        await createShoutout({
+          message: form.message,
+          recipient_ids: form.recipient_ids,
+        })
+      }
       onPosted?.()
       onClose?.()
       setForm({ recipient_ids: [], message: '' })
+      setImageFile(null)
     } catch (e) {
-      setError('Failed to post. Check your connection and login.')
+      const msg = e?.response?.data?.detail || e?.message || 'Failed to post shout-out. Please try again.'
+      setError(msg)
     } finally {
       setLoading(false)
     }
@@ -102,6 +113,32 @@ export default function PostModal({ open, onClose, onPosted }) {
               onChange={(e) => setForm(p => ({ ...p, message: e.target.value }))}
               placeholder="Write a recognition message..."
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Image (optional)</label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              onChange={(e) => {
+                setError('')
+                const file = e.target.files && e.target.files[0]
+                if (!file) { setImageFile(null); return }
+                if (!['image/jpeg', 'image/png'].includes(file.type)) {
+                  setError('Only JPG and PNG image files are allowed (max 2MB).')
+                  setImageFile(null)
+                  return
+                }
+                if (file.size > 2 * 1024 * 1024) {
+                  setError('Image is too large. Maximum size is 2MB.')
+                  setImageFile(null)
+                  return
+                }
+                setImageFile(file)
+              }}
+              className="block w-full text-sm text-gray-700"
+            />
+            <p className="mt-1 text-xs text-gray-400">JPG or PNG, up to 2MB.</p>
           </div>
 
           <div className="pt-2 flex items-center justify-end gap-2">

@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, Body, status
+from fastapi import FastAPI, Depends, HTTPException, Body, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from sqlalchemy import inspect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict
+import re
 from .auth import get_current_user
 
 
@@ -12,6 +13,9 @@ from .auth import get_current_user
 from .database import engine 
 from . import database, models, auth 
 import time 
+import os
+import json
+from fastapi.staticfiles import StaticFiles
 
 
 def startup_event_handler():
@@ -19,6 +23,15 @@ def startup_event_handler():
 
 
 app = FastAPI(title="BragBoard API") 
+
+# Serve uploaded images (after app is created)
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+try:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except Exception:
+    pass
+
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # Configure CORS (Cross-Origin Resource Sharing)
 origins = [
@@ -114,6 +127,18 @@ class UserOut(BaseModel):
     class Config:
         from_attributes = True
 
+# ------------------------------
+# Content validation helpers
+# ------------------------------
+MENTION_PATTERN = re.compile(r"@\S+")
+
+def has_non_tag_content(text: Optional[str]) -> bool:
+    if not text or not text.strip():
+        return False
+    # Remove @mentions and check if anything meaningful remains
+    stripped = MENTION_PATTERN.sub("", text)
+    return bool(stripped.strip())
+
 class ShoutoutCreate(BaseModel):
     message: str
     department: Optional[str] = None
@@ -186,9 +211,17 @@ class MeUpdate(BaseModel):
 @app.put("/user/me")
 def update_me(payload: MeUpdate = Body(...), db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     changed = False
+    name_changed = False
+    password_changed = False
+    old_name = current_user.name
     if payload.name is not None:
-        current_user.name = payload.name
-        changed = True
+        new_name = payload.name.strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Name cannot be blank")
+        if new_name != current_user.name:
+            current_user.name = new_name
+            changed = True
+            name_changed = True
     if payload.department is not None:
         current_user.department = payload.department
         changed = True
@@ -200,13 +233,30 @@ def update_me(payload: MeUpdate = Body(...), db: Session = Depends(get_db), curr
         changed = True
     if payload.password is not None and payload.password.strip():
         try:
-            current_user.password = auth.hash_password(payload.password)
+            # Enforce password strength on update as well
+            pwd = payload.password.strip()
+            pwd_pattern = re.compile(r"^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$")
+            if not pwd_pattern.match(pwd):
+                raise HTTPException(status_code=400, detail="Password must be at least 8 characters and include an uppercase letter, a number, and a special character")
+            current_user.password = auth.hash_password(pwd)
             changed = True
+            password_changed = True
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid password")
     if not changed:
         return {"message": "No changes"}
+
     db.add(current_user)
+
+    # Log admin-notifiable events
+    try:
+        if name_changed:
+            db.add(models.AdminLog(admin_id=current_user.id, action=f"username_change:{old_name}->{current_user.name}", target_id=current_user.id, target_type="user"))
+        if password_changed:
+            db.add(models.AdminLog(admin_id=current_user.id, action="password_change", target_id=current_user.id, target_type="user"))
+    except Exception:
+        pass
+
     db.commit()
     return {"message": "Profile updated"}
 
@@ -216,6 +266,12 @@ def update_me(payload: MeUpdate = Body(...), db: Session = Depends(get_db), curr
 
 @app.post("/shoutout/create")
 def create_shoutout(payload: ShoutoutCreate = Body(...), db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    # Prevent empty or mention-only messages
+    if not has_non_tag_content(payload.message):
+        raise HTTPException(status_code=400, detail="Shoutout message cannot be empty or only mentions")
+    # Require user to have a department for shoutouts
+    if not (current_user.department or "").strip():
+        raise HTTPException(status_code=400, detail="Please set your department before creating a shoutout")
     sh = models.Shoutout(
         sender_id=current_user.id,
         message=payload.message,
@@ -230,6 +286,67 @@ def create_shoutout(payload: ShoutoutCreate = Body(...), db: Session = Depends(g
     for rid in (payload.recipient_ids or []):
         db.add(models.ShoutoutRecipient(shoutout_id=sh.id, recipient_id=rid))
     db.commit()
+    return {"message": "Shoutout created", "id": sh.id}
+
+
+@app.post("/shoutout/create-with-image")
+async def create_shoutout_with_image(
+    message: str = Form(...),
+    recipient_ids: str = Form("[]"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    # Validate message content
+    if not has_non_tag_content(message):
+        raise HTTPException(status_code=400, detail="Shoutout message cannot be empty or only mentions")
+
+    # Require user department
+    if not (current_user.department or "").strip():
+        raise HTTPException(status_code=400, detail="Please set your department before creating a shoutout")
+
+    # Validate image type
+    allowed_types = {"image/jpeg", "image/png"}
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Only JPG and PNG image files are allowed (max 2MB)")
+
+    # Read and validate size
+    data = await file.read()
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image is too large. Maximum size is 2MB")
+
+    # Persist file
+    name_root, ext = os.path.splitext(file.filename or "image")
+    ext = ext.lower() or ".jpg"
+    safe_name = f"shoutout_{int(time.time()*1000)}{ext}"
+    path = os.path.join(UPLOAD_DIR, safe_name)
+    try:
+        with open(path, "wb") as f:
+            f.write(data)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to save image. Please try again")
+
+    # Parse recipients
+    try:
+        rec_ids_raw = json.loads(recipient_ids or "[]")
+        rec_ids = [int(x) for x in rec_ids_raw]
+    except Exception:
+        rec_ids = []
+
+    sh = models.Shoutout(
+        sender_id=current_user.id,
+        message=message,
+        department=current_user.department,
+        image_url=f"/uploads/{safe_name}",
+    )
+    db.add(sh)
+    db.commit()
+    db.refresh(sh)
+
+    for rid in rec_ids:
+        db.add(models.ShoutoutRecipient(shoutout_id=sh.id, recipient_id=rid))
+    db.commit()
+
     return {"message": "Shoutout created", "id": sh.id}
 
 @app.get("/shoutout/feed")
@@ -277,9 +394,22 @@ def get_feed(department: Optional[str] = None, db: Session = Depends(get_db), cu
         except Exception:
             pass
         try:
-            comments_count = db.query(models.Comment).filter(models.Comment.shoutout_id == sh.id).count()
+            comments_q = db.query(models.Comment).filter(models.Comment.shoutout_id == sh.id)
+            comments_count = comments_q.count()
+            tagged_in_comments = False
+            if current_user is not None:
+                name_marker = f"@{current_user.name}" if getattr(current_user, "name", None) else None
+                if name_marker:
+                    for c in comments_q.all():
+                        # Ignore comments authored by the current user to avoid self-notifications
+                        if c.user_id == current_user.id:
+                            continue
+                        if name_marker in (c.content or ""):
+                            tagged_in_comments = True
+                            break
         except Exception:
             comments_count = 0
+            tagged_in_comments = False
         results.append({
             "id": sh.id,
             "sender_id": sh.sender_id,
@@ -291,6 +421,7 @@ def get_feed(department: Optional[str] = None, db: Session = Depends(get_db), cu
             "reactions": reaction_counts,
             "reactors": {k: [ru.dict() for ru in v] for k, v in reactors_map.items()},
             "comments_count": comments_count,
+            "tagged_in_comments": tagged_in_comments,
         })
     return {"items": results}
 
@@ -386,8 +517,8 @@ class ReportComment(BaseModel):
 
 @app.post("/comment/add")
 def add_comment(payload: CommentAdd, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    if not payload.content.strip():
-        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+    if not has_non_tag_content(payload.content):
+        raise HTTPException(status_code=400, detail="Comment cannot be empty or only mentions")
     c = models.Comment(shoutout_id=payload.shoutout_id, user_id=current_user.id, content=payload.content)
     db.add(c)
     db.commit()
@@ -411,6 +542,8 @@ def fetch_comments(shoutout_id: int, db: Session = Depends(get_db)):
 
 @app.post("/shoutout/report")
 def report_shoutout(payload: ReportShoutout, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    if not has_non_tag_content(payload.reason):
+        raise HTTPException(status_code=400, detail="Report reason cannot be empty or only mentions")
     r = models.Report(shoutout_id=payload.shoutout_id, reported_by=current_user.id, reason=payload.reason)
     db.add(r)
     db.commit()
@@ -418,6 +551,8 @@ def report_shoutout(payload: ReportShoutout, db: Session = Depends(get_db), curr
 
 @app.post("/comment/report")
 def report_comment(payload: ReportComment, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    if not has_non_tag_content(payload.reason):
+        raise HTTPException(status_code=400, detail="Report reason cannot be empty or only mentions")
     r = models.Report(shoutout_id=None, comment_id=payload.comment_id, reported_by=current_user.id, reason=payload.reason)
     db.add(r)
     db.commit()
@@ -504,9 +639,54 @@ def admin_reports(db: Session = Depends(get_db), current_user = Depends(get_curr
     ensure_admin(current_user)
     rows = db.query(models.Report).order_by(models.Report.id.desc()).all()
     return [
-        {"id": r.id, "shoutout_id": r.shoutout_id, "comment_id": r.comment_id, "reported_by": r.reported_by, "reason": r.reason}
+        {
+            "id": r.id,
+            "shoutout_id": r.shoutout_id,
+            "comment_id": r.comment_id,
+            "reported_by": r.reported_by,
+            "reason": r.reason,
+            "created_at": getattr(r, "created_at", None).isoformat() if getattr(r, "created_at", None) else None,
+        }
         for r in rows
     ]
+
+
+@app.get("/admin/notifications")
+def admin_notifications(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    """Lightweight admin notifications: recent user profile changes and reports."""
+    ensure_admin(current_user)
+
+    logs = db.query(models.AdminLog).order_by(models.AdminLog.id.desc()).limit(20).all()
+    reports = db.query(models.Report).order_by(models.Report.id.desc()).limit(20).all()
+
+    log_items = [
+        {
+            "type": "user_change",
+            "id": log.id,
+            "action": log.action,
+            "target_id": log.target_id,
+            "target_type": log.target_type,
+            "created_at": getattr(log, "timestamp", None).isoformat() if getattr(log, "timestamp", None) else None,
+        }
+        for log in logs
+    ]
+
+    report_items = [
+        {
+            "type": "report",
+            "id": r.id,
+            "shoutout_id": r.shoutout_id,
+            "comment_id": r.comment_id,
+            "reported_by": r.reported_by,
+            "reason": r.reason,
+            "created_at": getattr(r, "created_at", None).isoformat() if getattr(r, "created_at", None) else None,
+        }
+        for r in reports
+    ]
+
+    items = log_items + report_items
+    items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return {"items": items}
 
 @app.post("/admin/reports/{rid}/dismiss")
 def admin_dismiss_report(rid: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):

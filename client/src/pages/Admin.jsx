@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import {
   fetchMe,
@@ -27,8 +27,12 @@ function TabButton({ active, onClick, children }) {
 
 export default function Admin() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const params = new URLSearchParams(location.search || '')
+  const initialTab = params.get('tab') || 'overview'
+  const initialReportId = params.get('reportId')
   const [me, setMe] = useState(null)
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState(initialTab)
 
   // Data buckets
   const [users, setUsers] = useState([])
@@ -37,6 +41,9 @@ export default function Admin() {
   const [openComments, setOpenComments] = useState({})
   const [commentsByShoutout, setCommentsByShoutout] = useState({})
   const [analytics, setAnalytics] = useState({ top_contributors: [], most_tagged: [], active_departments: [] })
+
+  const reportIdToFocusRef = useRef(initialReportId)
+  const didScrollToReportRef = useRef(false)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -79,12 +86,31 @@ export default function Admin() {
   useEffect(() => {
     if (!me || me.role !== 'admin') return
     if (tab === 'overview') { loadAnalytics(); loadUsers() }
-    if (tab === 'analytics') { loadAnalytics(); loadUsers() }
     if (tab === 'users') loadUsers()
     if (tab === 'shoutouts') { loadShoutouts(); loadUsers() }
     if (tab === 'reports') { loadReports(); loadUsers() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, me])
+
+  // After reports load, if a reportId was provided in the URL, scroll to and highlight that row once
+  useEffect(() => {
+    if (tab !== 'reports') return
+    if (didScrollToReportRef.current) return
+    const rid = reportIdToFocusRef.current
+    if (!rid) return
+    const el = document.getElementById(`report-${rid}`)
+    if (!el) return
+    didScrollToReportRef.current = true
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } catch {
+      // ignore scroll errors
+    }
+    el.classList.add('bg-yellow-50')
+    setTimeout(() => {
+      el.classList.remove('bg-yellow-50')
+    }, 2000)
+  }, [tab, reports])
 
   const logout = () => {
     localStorage.removeItem('access_token')
@@ -107,7 +133,7 @@ export default function Admin() {
             <TabButton active={tab==='users'} onClick={() => setTab('users')}>Users</TabButton>
             <TabButton active={tab==='shoutouts'} onClick={() => setTab('shoutouts')}>Shout-outs</TabButton>
             <TabButton active={tab==='reports'} onClick={() => setTab('reports')}>Reports</TabButton>
-            <TabButton active={tab==='analytics'} onClick={() => setTab('analytics')}>Analytics</TabButton>
+            {/* Analytics tab removed; overview already shows analytics */}
           </div>
         </div>
 
@@ -261,11 +287,11 @@ export default function Admin() {
             </div>
             <div className="divide-y">
               {reports.map((r, idx) => (
-                <div key={r.id} className="flex items-center gap-3 p-3 text-sm">
+                <div id={`report-${r.id}`} key={r.id} className="flex items-center gap-3 p-3 text-sm">
                   <div className="w-10 text-gray-500">{idx + 1}.</div>
                   <div className="flex-1">
                     <div className="text-gray-900">Reason: {r.reason}</div>
-                    <div className="text-gray-500">Shoutout: {r.shoutout_id || '—'} · Comment: {r.comment_id || '—'} · Reporter: {userMap[r.reported_by]?.name || 'Unknown User'}</div>
+                    <div className="text-gray-500">Shoutout: {r.shoutout_id || '—'} · Comment: {r.comment_id || '—'} · Reporter: {userMap[r.reported_by]?.name || 'Unknown User'} · Reported: {r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     {r.shoutout_id && (
@@ -280,47 +306,6 @@ export default function Admin() {
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-
-        {tab === 'analytics' && (
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-lg bg-white border">
-              <div className="font-medium mb-2">Top contributors</div>
-              <div className="space-y-2">
-                {analytics.top_contributors.map(x => (
-                  <div key={x.user_id} className="flex items-center gap-2">
-                    <div className="text-sm text-gray-700">{userMap[x.user_id]?.name || 'Unknown User'}</div>
-                    <div className="flex-1 h-2 bg-gray-100 rounded"><div className="h-2 bg-indigo-500 rounded" style={{ width: `${(x.count / maxCount(analytics.top_contributors))*100}%` }} /></div>
-                    <div className="text-xs text-gray-500 w-8 text-right">{x.count}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="p-4 rounded-lg bg-white border">
-              <div className="font-medium mb-2">Most tagged</div>
-              <div className="space-y-2">
-                {analytics.most_tagged.map(x => (
-                  <div key={x.user_id} className="flex items-center gap-2">
-                    <div className="text-sm text-gray-700">{userMap[x.user_id]?.name || 'Unknown User'}</div>
-                    <div className="flex-1 h-2 bg-gray-100 rounded"><div className="h-2 bg-blue-500 rounded" style={{ width: `${(x.count / maxCount(analytics.most_tagged))*100}%` }} /></div>
-                    <div className="text-xs text-gray-500 w-8 text-right">{x.count}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="p-4 rounded-lg bg-white border md:col-span-2">
-              <div className="font-medium mb-2">Active departments</div>
-              <div className="space-y-2">
-                {analytics.active_departments.map(x => (
-                  <div key={x.department} className="flex items-center gap-2">
-                    <div className="text-sm text-gray-700">{x.department || '—'}</div>
-                    <div className="flex-1 h-2 bg-gray-100 rounded"><div className="h-2 bg-emerald-500 rounded" style={{ width: `${(x.count / maxCount(analytics.active_departments))*100}%` }} /></div>
-                    <div className="text-xs text-gray-500 w-8 text-right">{x.count}</div>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         )}

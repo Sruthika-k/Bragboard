@@ -139,7 +139,20 @@ export default function Signup() {
       }
     } catch (error) {
       console.error('Registration Error:', error)
-      const msg = error?.response?.data?.detail || `Registration failed. Email might already be registered.`
+      const detail = error?.response?.data?.detail || ''
+
+      // Map backend validation messages to specific fields where possible
+      const fieldErrors = { name: '', email: '', password: '', department: '' }
+      if (detail.includes('Name is required')) fieldErrors.name = 'Name is required.'
+      if (detail.includes('Email is required')) fieldErrors.email = 'Email is required.'
+      if (detail.includes('Only Gmail') || detail.includes('email addresses are allowed')) fieldErrors.email = detail
+      if (detail.includes('Email already registered')) fieldErrors.email = 'This email is already registered.'
+      if (detail.includes('Password must be at least')) fieldErrors.password = detail
+      if (detail.includes('Department is required')) fieldErrors.department = 'Please select a department.'
+
+      setRegisterError(prev => ({ ...prev, ...fieldErrors }))
+
+      const msg = detail || 'Registration failed. Please check your details and try again.'
       setFeedback({ message: msg, isError: true })
     } finally {
       setIsLoading(false)
