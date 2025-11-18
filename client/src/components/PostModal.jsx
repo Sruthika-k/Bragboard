@@ -1,0 +1,154 @@
+import { useEffect, useState } from 'react'
+import { createShoutout, createShoutoutWithImage, fetchUsers, fetchMe } from '../lib/api'
+
+export default function PostModal({ open, onClose, onPosted }) {
+  const [users, setUsers] = useState([])
+  const [departments, setDepartments] = useState([]) // no longer shown; kept to minimize changes
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [me, setMe] = useState(null)
+  const [imageFile, setImageFile] = useState(null)
+
+  const [form, setForm] = useState({
+    recipient_ids: [],
+    message: '',
+  })
+
+  useEffect(() => {
+    if (!open) return
+    let mounted = true
+    async function load() {
+      try {
+        const [u, meRes] = await Promise.all([fetchUsers(), fetchMe().catch(()=>null)])
+        if (!mounted) return
+        setUsers(u)
+        setMe(meRes)
+        setDepartments([])
+      } catch (e) {
+        // ignore
+      }
+    }
+    load()
+    return () => { mounted = false }
+  }, [open])
+
+  const toggleRecipient = (id) => {
+    setForm((p) => {
+      const exists = p.recipient_ids.includes(id)
+      return { ...p, recipient_ids: exists ? p.recipient_ids.filter(x => x !== id) : [...p.recipient_ids, id] }
+    })
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (!form.message.trim()) { setError('Message cannot be blank.'); return }
+    try {
+      setLoading(true)
+      if (imageFile) {
+        const fd = new FormData()
+        fd.append('message', form.message)
+        fd.append('recipient_ids', JSON.stringify(form.recipient_ids || []))
+        fd.append('file', imageFile)
+        await createShoutoutWithImage(fd)
+      } else {
+        await createShoutout({
+          message: form.message,
+          recipient_ids: form.recipient_ids,
+        })
+      }
+      onPosted?.()
+      onClose?.()
+      setForm({ recipient_ids: [], message: '' })
+      setImageFile(null)
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e?.message || 'Failed to post shout-out. Please try again.'
+      setError(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="w-full max-w-lg rounded-lg bg-white shadow-xl border border-gray-200">
+        <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+          <h3 className="font-semibold">Create Shout-out</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-4">
+          {error && <div className="text-sm text-red-600">{error}</div>}
+
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Recipients</label>
+            <div className="max-h-64 overflow-auto border rounded-md divide-y">
+              {(() => {
+                const myDept = me?.department || ''
+                const sorted = [...users].sort((a,b) => {
+                  const aIn = (a.department||'') === myDept
+                  const bIn = (b.department||'') === myDept
+                  if (aIn !== bIn) return aIn ? -1 : 1
+                  return (a.name||'').localeCompare(b.name||'')
+                })
+                return sorted.map(u => (
+                  <label key={u.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                    <input type="checkbox" checked={form.recipient_ids.includes(u.id)} onChange={() => toggleRecipient(u.id)} />
+                    <span>{u.name} <span className="text-gray-400">({u.department || '—'})</span></span>
+                  </label>
+                ))
+              })()}
+            </div>
+          </div>
+
+          {/* Department selection removed; backend uses sender's department automatically */}
+
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Message</label>
+            <textarea
+              className="w-full px-3 py-2 border rounded-md"
+              rows={4}
+              value={form.message}
+              onChange={(e) => setForm(p => ({ ...p, message: e.target.value }))}
+              placeholder="Write a recognition message..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Image (optional)</label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              onChange={(e) => {
+                setError('')
+                const file = e.target.files && e.target.files[0]
+                if (!file) { setImageFile(null); return }
+                if (!['image/jpeg', 'image/png'].includes(file.type)) {
+                  setError('Only JPG and PNG image files are allowed (max 2MB).')
+                  setImageFile(null)
+                  return
+                }
+                if (file.size > 2 * 1024 * 1024) {
+                  setError('Image is too large. Maximum size is 2MB.')
+                  setImageFile(null)
+                  return
+                }
+                setImageFile(file)
+              }}
+              className="block w-full text-sm text-gray-700"
+            />
+            <p className="mt-1 text-xs text-gray-400">JPG or PNG, up to 2MB.</p>
+          </div>
+
+          <div className="pt-2 flex items-center justify-end gap-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200">Cancel</button>
+            <button disabled={loading} className="px-4 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60">
+              {loading ? 'Posting...' : 'Post Shout-out'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
