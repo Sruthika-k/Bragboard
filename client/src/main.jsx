@@ -1,19 +1,22 @@
 // main.jsx
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom' // Provides routing context
-import App from './App.jsx' // Imports the main App component
-import './index.css' // Imports the styles
+import { BrowserRouter } from 'react-router-dom'
+import App from './App.jsx'
+import './index.css'
 
+import { ToastProvider } from './components/Toast.jsx'
 
 const container = document.getElementById('app')
 const root = createRoot(container)
+
 root.render(
   <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    {/* ⬅️ ToastProvider MUST wrap everything */}
+    <ToastProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </ToastProvider>
   </React.StrictMode>
 )
-
-

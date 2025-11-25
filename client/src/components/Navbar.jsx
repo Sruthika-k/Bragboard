@@ -106,7 +106,7 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
         setNotifs(items)
         // Determine if there are new notifications since last seen
         const newestTs = Math.max(0, ...items.map(it => it.created_at ? Date.parse(it.created_at) : 0))
-        if (newestTs && newestTs > lastSeenAt) setHasNew(true)
+        setHasNew(Boolean(newestTs && newestTs > lastSeenAt))
       } catch {}
     }
     load()
@@ -194,16 +194,25 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
 
         <div ref={notifRef} className="relative flex items-center gap-3">
           {/* Notifications */}
-          <button onClick={() => { 
-              setOpenNotif(o => !o)
-              if (!openNotif) {
-                const now = Date.now()
-                setHasNew(false)
-                setLastSeenAt(now)
-                const key = me ? `notif_last_seen_${me.id}` : 'notif_last_seen'
-                try { localStorage.setItem(key, String(now)) } catch {}
-              }
-            }} className="relative px-2 py-1.5 rounded-md hover:bg-gray-100" title="Notifications">
+          <button
+            onClick={() => {
+              setOpenNotif((prev) => {
+                const next = !prev
+                if (next) {
+                  // Mark all current notifications as seen when opening
+                  const newestTs = Math.max(0, ...notifs.map(it => it.created_at ? Date.parse(it.created_at) : 0))
+                  const seenAt = newestTs || Date.now()
+                  setLastSeenAt(seenAt)
+                  setHasNew(false)
+                  const key = me ? `notif_last_seen_${me.id}` : 'notif_last_seen'
+                  try { localStorage.setItem(key, String(seenAt)) } catch {}
+                }
+                return next
+              })
+            }}
+            className="relative px-2 py-1.5 rounded-md hover:bg-gray-100"
+            title="Notifications"
+          >
             <span>🔔</span>
             {hasNew && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 bg-red-500 rounded-full" />}
           </button>
@@ -269,7 +278,14 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
                 </div>
                 <div>
                   <div className="font-medium">{me.name}</div>
-                  <div className="text-xs text-gray-500">{me.department || '—'}</div>
+                  <div className="mt-0.5 flex items-center gap-2 text-xs text-gray-500">
+                    <span>{me.department || '—'}</span>
+                    {me.role === 'admin' && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                        Admin
+                      </span>
+                    )}
+                  </div>
                 </div>
               </Link>
               {me.role === 'admin' && (

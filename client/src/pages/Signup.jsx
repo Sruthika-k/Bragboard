@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { API_BASE_URL } from '../config'
+import { normalizeEmail, isValidEmailForBackend, isStrongPassword } from '../lib/validation'
+import { useToast } from '../components/Toast'
 
 // --- CONFIGURATION ---
 const DEPARTMENTS = ['Marketing', 'Engineering', 'HR', 'Sales', 'Finance'];
@@ -67,6 +69,7 @@ const PasswordField = ({ value, onChange, error, showPassword, setShowPassword, 
 // --- MAIN SIGNUP COMPONENT ---
 export default function Signup() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [isLoading, setIsLoading] = useState(false);
   const [feedback, setFeedback] = useState({ message: '', isError: false });
 
@@ -77,13 +80,10 @@ export default function Signup() {
   const [registerError, setRegisterError] = useState({ 
     name: '', email: '', password: '', department: '' 
   });
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
-
-  // --- UTILITY FUNCTIONS ---
-  function isValidEmail(value) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-  }
 
   const clearErrors = () => {
     setRegisterError({ name: '', email: '', password: '', department: '' });
@@ -93,13 +93,17 @@ export default function Signup() {
   // Unified handler for all state changes (including error clearing)
   const handleChange = (e) => {
     const { name, value } = e.target;
-    
+
     // 1. Update the state value
     setRegisterState(p => ({ ...p, [name]: value }));
-    
-    // 2. Clear the error message for this specific field if it exists
+
+    // 2. Track field touch for potential future validation behaviors
+    if (name === 'email') setEmailTouched(true);
+    if (name === 'password') setPasswordTouched(true);
+
+    // 3. Clear the error message for this specific field if it exists
     if (registerError[name]) {
-        setRegisterError(p => ({ ...p, [name]: '' }));
+      setRegisterError(p => ({ ...p, [name]: '' }));
     }
   };
   
@@ -110,50 +114,83 @@ export default function Signup() {
     let errors = {};
     let hasError = false;
 
-    // Validation
-    if (!registerState.name) { errors.name = 'Please enter your name.'; hasError = true; }
-    if (!registerState.email || !isValidEmail(registerState.email)) { errors.email = 'Enter a valid email.'; hasError = true; }
-    if (!registerState.password) { errors.password = 'Please enter a password.'; hasError = true; }
-    if (!registerState.department) { errors.department = 'Please select a department.'; hasError = true; }
+    // Basic required checks
+    if (!registerState.name.trim()) {
+      errors.name = 'Please enter your name.';
+      hasError = true;
+    }
+
+    const normalizedEmail = normalizeEmail(registerState.email);
+    if (!normalizedEmail) {
+      errors.email = 'Please enter your email.';
+      hasError = true;
+    } else if (!isValidEmailForBackend(normalizedEmail)) {
+      // Simple Gmail validation warning
+      errors.email = 'Please enter a valid Gmail address (example: name@gmail.com)';
+      hasError = true;
+    }
+
+    if (!registerState.password) {
+      errors.password = 'Please enter a password.';
+      hasError = true;
+    } else if (!isStrongPassword(registerState.password)) {
+      // New password rule message (aligned with backend)
+      errors.password = 'Password must be at least 8 characters and include an uppercase letter, a number, and a special character';
+      hasError = true;
+    }
+
+    if (!registerState.department) {
+      errors.department = 'Please select a department.';
+      hasError = true;
+    }
     
     setRegisterError(errors);
-    if (hasError) return;
+    if (hasError) {
+      toast.showError('Please fix the highlighted errors before registering.');
+      return;
+    }
 
     setIsLoading(true);
 
     try {
       // API CALL TO FASTAPI /register (JSON)
+      const normalizedEmail = normalizeEmail(registerState.email);
       const res = await axios.post(`${API_BASE_URL}/register`, {
         name: registerState.name,
-        email: registerState.email,
+        email: normalizedEmail,
         password: registerState.password,
         department: registerState.department,
         role: 'employee',
       }, { timeout: 8000 })
 
       if (res.status === 200) {
-        setFeedback({ message: res.data?.message || 'Registration successful!', isError: false });
+        const msg = res.data?.message || 'Registration successful!';
+        setFeedback({ message: msg, isError: false });
+        toast.showSuccess(msg);
         setTimeout(() => navigate('/'), 800);
       } else {
-        setFeedback({ message: 'Unexpected response from server.', isError: true });
+        const msg = 'Unexpected response from server.';
+        setFeedback({ message: msg, isError: true });
+        toast.showError(msg);
       }
     } catch (error) {
-      console.error('Registration Error:', error)
+      // Surface errors via UI toast instead of console
       const detail = error?.response?.data?.detail || ''
 
       // Map backend validation messages to specific fields where possible
       const fieldErrors = { name: '', email: '', password: '', department: '' }
       if (detail.includes('Name is required')) fieldErrors.name = 'Name is required.'
       if (detail.includes('Email is required')) fieldErrors.email = 'Email is required.'
-      if (detail.includes('Only Gmail') || detail.includes('email addresses are allowed')) fieldErrors.email = detail
+      if (detail.includes('Only Gmail') || detail.includes('email addresses are allowed')) fieldErrors.email = 'Please enter a valid Gmail address (example: name@gmail.com)'
       if (detail.includes('Email already registered')) fieldErrors.email = 'This email is already registered.'
-      if (detail.includes('Password must be at least')) fieldErrors.password = detail
+      if (detail.includes('Password must be at least 8 characters')) fieldErrors.password = 'Password must be at least 8 characters and include an uppercase letter, a number, and a special character'
       if (detail.includes('Department is required')) fieldErrors.department = 'Please select a department.'
 
       setRegisterError(prev => ({ ...prev, ...fieldErrors }))
 
       const msg = detail || 'Registration failed. Please check your details and try again.'
       setFeedback({ message: msg, isError: true })
+      toast.showError(msg)
     } finally {
       setIsLoading(false)
       setRegisterState(p => ({ ...p, password: '' }))
@@ -204,9 +241,9 @@ export default function Signup() {
             value={registerState.password}
             onChange={handleChange}
             error={registerError.password}
-            showPassword={showPassword} // Passed state down
-            setShowPassword={setShowPassword} // Passed state updater down
-            isLoading={isLoading} // Passed state down
+            showPassword={showPassword}
+            setShowPassword={setShowPassword}
+            isLoading={isLoading}
           />
 
           {/* Department Dropdown */}
@@ -239,7 +276,13 @@ export default function Signup() {
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={
+              isLoading ||
+              !registerState.name.trim() ||
+              !registerState.email.trim() ||
+              !registerState.password ||
+              !registerState.department
+            }
             className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-500 text-white font-semibold text-base shadow-md transition-all duration-200 hover:from-indigo-600 hover:to-blue-600 hover:shadow-lg active:scale-[0.98] disabled:opacity-50"
           >
             {isLoading ? 'Registering...' : 'Register Account'}

@@ -34,7 +34,7 @@ def add_comment(
     if not has_non_tag_content(payload.content):
         raise HTTPException(
             status_code=400,
-            detail="Comment cannot be empty or only mentions",
+            detail="Comment cannot be empty.",
         )
     c = models.Comment(
         shoutout_id=payload.shoutout_id,

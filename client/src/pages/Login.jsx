@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { API_BASE_URL } from '../config'
+import { normalizeEmail, isValidEmailForBackend } from '../lib/validation'
+import { useToast } from '../components/Toast'
 
 // --- CONFIGURATION ---
 
@@ -12,24 +14,22 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false) // New state for loading/disabling button
   const [feedback, setFeedback] = useState({ message: '', isError: false }) // New state for feedback
+  const toast = useToast()
 
   const [emailError, setEmailError] = useState('')
   const [passwordError, setPasswordError] = useState('')
-
-  function isValidEmail(value) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-  }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setFeedback({ message: '', isError: false }) // Clear previous feedback
 
     let hasError = false
-    if (!email) {
+    const normalizedEmail = normalizeEmail(email)
+    if (!normalizedEmail) {
       setEmailError('Please enter your email.')
       hasError = true
-    } else if (!isValidEmail(email)) {
-      setEmailError('Please enter a valid email address.')
+    } else if (!isValidEmailForBackend(normalizedEmail)) {
+      setEmailError('Please enter a valid Gmail address (example: name@gmail.com).')
       hasError = true
     } else {
       setEmailError('')
@@ -48,7 +48,8 @@ export default function Login() {
 
     // --- API CALL (axios + timeout, JSON body) ---
     try {
-      const res = await axios.post(`${API_BASE_URL}/login`, { email, password }, { timeout: 8000 })
+      const normalizedEmail = normalizeEmail(email)
+      const res = await axios.post(`${API_BASE_URL}/login`, { email: normalizedEmail, password }, { timeout: 8000 })
 
       if (res.status === 200 && res.data?.access_token) {
         localStorage.setItem('access_token', res.data.access_token)
@@ -60,9 +61,9 @@ export default function Login() {
         setPassword('')
       }
     } catch (error) {
-      console.error('Login error:', error)
       const msg = error?.response?.data?.detail || 'Login failed. Please check credentials or server connection.'
       setFeedback({ message: msg, isError: true })
+      toast.showError(msg)
       setPassword('')
     } finally {
       setIsLoading(false)

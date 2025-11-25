@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { fetchFeed, fetchUsers, toggleReaction, reportShoutout, fetchMe, adminDeleteShoutout } from '../lib/api'
 import { API_BASE_URL } from '../config'
 import Comments from './Comments'
+import { useToast } from './Toast'
+import { PromptDialog } from './PromptDialog'
+import { ConfirmDialog } from './ConfirmDialog'
 
 export default function Feed({ department = 'all', senderId = null, taggedUserId = null, date = null, refreshKey = 0, scrollToId = null }) {
   const [items, setItems] = useState([])
@@ -16,6 +19,10 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
   const cardRefs = useRef({})
   const navigate = useNavigate()
   const stop = (e) => { e.stopPropagation() }
+  const toast = useToast()
+  const [reportingShoutoutId, setReportingShoutoutId] = useState(null)
+  const [reportSubmitting, setReportSubmitting] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   useEffect(() => {
     let mounted = true
@@ -56,8 +63,13 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
           const key = type
           const exists = (reactors[key] || []).some(u => u.id === me.id)
           if (exists) {
+            // Toggle off: remove from this reaction type
             reactors[key] = (reactors[key] || []).filter(u => u.id !== me.id)
           } else {
+            // Ensure only one reaction type per user per shout-out
+            reactors.like = (reactors.like || []).filter(u => u.id !== me.id)
+            reactors.clap = (reactors.clap || []).filter(u => u.id !== me.id)
+            reactors.star = (reactors.star || []).filter(u => u.id !== me.id)
             reactors[key] = [...(reactors[key] || []), { id: me.id, name: me.name, email: me.email, department: me.department, role: me.role }]
           }
         }
@@ -211,28 +223,18 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
                   <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-md w-40 z-10">
                     {me?.role === 'admin' && (
                       <button
-                        onClick={async (e) => {
+                        onClick={(e) => {
                           stop(e)
-                          try {
-                            await adminDeleteShoutout(item.id)
-                            setItems(prev => prev.filter(x => x.id !== item.id))
-                          } catch {}
+                          setConfirmDeleteId(item.id)
                           setOpenMenus(p => ({ ...p, [item.id]: false }))
                         }}
                         className="w-full text-left px-3 py-2 text-red-700 hover:bg-red-50"
                       >Delete</button>
                     )}
                     <button
-                      onClick={async (e) => {
+                      onClick={(e) => {
                         stop(e)
-                        const reason = window.prompt('Report reason?')
-                        if (!reason) return
-                        try {
-                          await reportShoutout({ shoutout_id: item.id, reason })
-                        } catch (err) {
-                          const msg = err?.response?.data?.detail || 'Failed to submit report. Please try again.'
-                          alert(msg)
-                        }
+                        setReportingShoutoutId(item.id)
                         setOpenMenus(p => ({ ...p, [item.id]: false }))
                       }}
                       className="w-full text-left px-3 py-2 hover:bg-gray-50"
@@ -254,6 +256,56 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
           </div>
         )
       })}
+      <PromptDialog
+        open={reportingShoutoutId != null}
+        title="Report shout-out"
+        message="Please provide a brief reason for reporting this shout-out."
+        placeholder="Enter report reason..."
+        confirmText="Submit report"
+        cancelText="Cancel"
+        submitting={reportSubmitting}
+        onCancel={() => {
+          setReportingShoutoutId(null)
+        }}
+        onConfirm={async (reason) => {
+          if (!reportingShoutoutId) return
+          const trimmed = reason.trim()
+          if (!trimmed) return
+          try {
+            setReportSubmitting(true)
+            await reportShoutout({ shoutout_id: reportingShoutoutId, reason: trimmed })
+            toast.showSuccess('Report submitted.')
+          } catch (err) {
+            const msg = err?.response?.data?.detail || 'Failed to submit report. Please try again.'
+            toast.showError(msg)
+          } finally {
+            setReportSubmitting(false)
+            setReportingShoutoutId(null)
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={confirmDeleteId != null}
+        title="Delete shout-out"
+        message="Are you sure? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        submitting={false}
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={async () => {
+          if (!confirmDeleteId) return
+          try {
+            await adminDeleteShoutout(confirmDeleteId)
+            setItems(prev => prev.filter(x => x.id !== confirmDeleteId))
+            toast.showSuccess('Shout-out deleted.')
+          } catch (err) {
+            const msg = err?.response?.data?.detail || 'Failed to delete shout-out.'
+            toast.showError(msg)
+          } finally {
+            setConfirmDeleteId(null)
+          }
+        }}
+      />
     </div>
   )
 }

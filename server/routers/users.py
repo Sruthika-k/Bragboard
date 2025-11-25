@@ -26,6 +26,8 @@ class MeUpdate(BaseModel):
     department: Optional[str] = None
     designation: Optional[str] = None
     profile_pic: Optional[str] = None
+    # For password change, the current password is required to verify identity
+    current_password: Optional[str] = None
     password: Optional[str] = None
 
 
@@ -95,6 +97,19 @@ def update_me(
         changed = True
 
     if payload.password is not None and payload.password.strip():
+        # Require current_password to be provided and correct when changing password
+        current_plain = (payload.current_password or "").strip()
+        if not current_plain:
+            raise HTTPException(
+                status_code=400,
+                detail="Current password is required to change your password",
+            )
+        if not auth.verify_password(current_plain, current_user.password):
+            raise HTTPException(
+                status_code=400,
+                detail="Current password is incorrect",
+            )
+
         try:
             pwd = payload.password.strip()
             pwd_pattern = re.compile(r"^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$")
@@ -109,6 +124,9 @@ def update_me(
             current_user.password = auth.hash_password(pwd)
             changed = True
             password_changed = True
+        except HTTPException:
+            # Re-raise validation errors as-is
+            raise
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid password")
 

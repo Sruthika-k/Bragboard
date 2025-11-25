@@ -26,7 +26,9 @@ def toggle_reaction(
     if payload.type not in valid:
         raise HTTPException(status_code=400, detail="Invalid reaction type")
 
-    existing = (
+    # Enforce only one reaction per user per shoutout
+    # 1) If the user already has the SAME reaction on this shoutout, remove it (toggle off)
+    existing_same = (
         db.query(models.Reaction)
         .filter(
             models.Reaction.shoutout_id == payload.shoutout_id,
@@ -35,11 +37,18 @@ def toggle_reaction(
         )
         .first()
     )
-    if existing:
-        db.delete(existing)
+    if existing_same:
+        db.delete(existing_same)
         db.commit()
         action = "removed"
     else:
+        # 2) Remove any other reaction types by this user on the same shoutout
+        db.query(models.Reaction).filter(
+            models.Reaction.shoutout_id == payload.shoutout_id,
+            models.Reaction.user_id == current_user.id,
+        ).delete()
+
+        # 3) Add the new reaction
         rec = models.Reaction(
             shoutout_id=payload.shoutout_id,
             user_id=current_user.id,

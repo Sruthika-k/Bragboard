@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { addComment, fetchComments, reportComment, fetchUsers } from '../lib/api'
 import { fetchMe, adminDeleteComment } from '../lib/api'
+import { useToast } from './Toast'
+import { PromptDialog } from './PromptDialog'
+import { ConfirmDialog } from './ConfirmDialog'
 
 export default function Comments({ shoutoutId }) {
   const [items, setItems] = useState([])
@@ -14,6 +17,10 @@ export default function Comments({ shoutoutId }) {
   const [filtered, setFiltered] = useState([])
   const [me, setMe] = useState(null)
   const [openMenus, setOpenMenus] = useState({})
+  const [reportingCommentId, setReportingCommentId] = useState(null)
+  const [reportSubmitting, setReportSubmitting] = useState(false)
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+  const toast = useToast()
 
   async function load() {
     setLoading(true)
@@ -53,15 +60,22 @@ export default function Comments({ shoutoutId }) {
 
   const submit = async (e) => {
     e.preventDefault()
-    if (!text.trim()) return
+    const trimmed = text.trim()
+    if (!trimmed) {
+      const msg = 'Comment cannot be empty.'
+      setError(msg)
+      toast.showError(msg)
+      return
+    }
     try {
       setPosting(true)
-      await addComment({ shoutout_id: shoutoutId, content: text })
+      await addComment({ shoutout_id: shoutoutId, content: trimmed })
       setText('')
       await load()
     } catch (e) {
       const msg = e?.response?.data?.detail || 'Failed to post comment. Please try again.'
       setError(msg)
+      toast.showError(msg)
     } finally {
       setPosting(false)
     }
@@ -89,6 +103,24 @@ export default function Comments({ shoutoutId }) {
       setText(next)
     }
     setOpenSuggest(false)
+  }
+
+  const renderContentWithMentions = (text) => {
+    if (!text) return null
+    const parts = String(text).split(/(@\S+)/g)
+    return parts.map((part, idx) => {
+      if (part.startsWith('@') && part.length > 1) {
+        return (
+          <span
+            key={idx}
+            className="px-1 rounded bg-blue-50 text-blue-700 font-medium"
+          >
+            {part}
+          </span>
+        )
+      }
+      return <span key={idx}>{part}</span>
+    })
   }
 
   return (
@@ -146,23 +178,16 @@ export default function Comments({ shoutoutId }) {
                       <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-md w-40 z-10">
                         {me?.role === 'admin' && (
                           <button
-                            onClick={async () => {
-                              try { await adminDeleteComment(c.id); await load() } catch {}
+                            onClick={() => {
+                              setConfirmDeleteId(c.id)
                               setOpenMenus(p => ({ ...p, [c.id]: false }))
                             }}
                             className="w-full text-left px-3 py-2 text-red-700 hover:bg-red-50"
                           >Delete</button>
                         )}
                         <button
-                          onClick={async () => {
-                            const reason = window.prompt('Report comment reason?')
-                            if (!reason) return
-                            try {
-                              await reportComment({ comment_id: c.id, reason })
-                            } catch (e) {
-                              const msg = e?.response?.data?.detail || 'Failed to submit report. Please try again.'
-                              setError(msg)
-                            }
+                          onClick={() => {
+                            setReportingCommentId(c.id)
                             setOpenMenus(p => ({ ...p, [c.id]: false }))
                           }}
                           className="w-full text-left px-3 py-2 hover:bg-gray-50"
@@ -171,12 +196,63 @@ export default function Comments({ shoutoutId }) {
                     )}
                   </div>
                 </div>
-                <div className="mt-1 text-gray-800">{c.content}</div>
+                <div className="mt-1 text-gray-800 break-words">{renderContentWithMentions(c.content)}</div>
               </div>
             </div>
           </div>
         ))}
       </div>
+      <PromptDialog
+        open={reportingCommentId != null}
+        title="Report comment"
+        message="Please provide a brief reason for reporting this comment."
+        placeholder="Enter report reason..."
+        confirmText="Submit report"
+        cancelText="Cancel"
+        submitting={reportSubmitting}
+        onCancel={() => {
+          setReportingCommentId(null)
+        }}
+        onConfirm={async (reason) => {
+          if (!reportingCommentId) return
+          const trimmed = reason.trim()
+          if (!trimmed) return
+          try {
+            setReportSubmitting(true)
+            await reportComment({ comment_id: reportingCommentId, reason: trimmed })
+            toast.showSuccess('Report submitted.')
+          } catch (e) {
+            const msg = e?.response?.data?.detail || 'Failed to submit report. Please try again.'
+            setError(msg)
+            toast.showError(msg)
+          } finally {
+            setReportSubmitting(false)
+            setReportingCommentId(null)
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={confirmDeleteId != null}
+        title="Delete comment"
+        message="Are you sure? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        submitting={false}
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={async () => {
+          if (!confirmDeleteId) return
+          try {
+            await adminDeleteComment(confirmDeleteId)
+            await load()
+          } catch (e) {
+            const msg = e?.response?.data?.detail || 'Failed to delete comment.'
+            setError(msg)
+            toast.showError(msg)
+          } finally {
+            setConfirmDeleteId(null)
+          }
+        }}
+      />
     </div>
   )
 }

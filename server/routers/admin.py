@@ -146,14 +146,9 @@ def admin_dismiss_report(rid: int, db: Session = Depends(database.get_db), curre
     r = db.query(models.Report).get(rid)
     if not r:
         raise HTTPException(status_code=404, detail="Report not found")
-    # If this report is about a comment, delete the comment as part of resolving the report
-    if r.comment_id:
-        c = db.query(models.Comment).get(r.comment_id)
-        if c:
-            db.delete(c)
     db.delete(r)
     db.commit()
-    return {"message": "Report resolved"}
+    return {"message": "Report dismissed"}
 
 
 @router.get("/admin/analytics")

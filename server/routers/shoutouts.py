@@ -60,6 +60,11 @@ def create_shoutout(
             status_code=400,
             detail="Shoutout message cannot be empty or only mentions",
         )
+    if not payload.recipient_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Select at least one recipient.",
+        )
     if not (current_user.department or "").strip():
         raise HTTPException(
             status_code=400,
@@ -107,14 +112,14 @@ async def create_shoutout_with_image(
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=400,
-            detail="Only JPG and PNG image files are allowed (max 2MB)",
+            detail="Only JPG and PNG image files are allowed (max 5MB)",
         )
 
     data = await file.read()
-    if len(data) > 2 * 1024 * 1024:
+    if len(data) > 5 * 1024 * 1024:
         raise HTTPException(
             status_code=400,
-            detail="Image is too large. Maximum size is 2MB",
+            detail="Image file size too large.",
         )
 
     name_root, ext = os.path.splitext(file.filename or "image")
@@ -135,6 +140,12 @@ async def create_shoutout_with_image(
         rec_ids = [int(x) for x in rec_ids_raw]
     except Exception:
         rec_ids = []
+
+    if not rec_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Select at least one recipient.",
+        )
 
     sh = models.Shoutout(
         sender_id=current_user.id,

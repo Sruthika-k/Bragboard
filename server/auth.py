@@ -115,10 +115,10 @@ def register(user_data: UserRegister, db: Session = Depends(database.get_db)):
     if not norm_email:
         raise HTTPException(status_code=400, detail="Email is required")
 
-    # Validate email provider (Gmail/Outlook/Hotmail/Yahoo)
-    email_pattern = re.compile(r"^[^@]+@(gmail\.com|outlook\.com|hotmail\.com|yahoo\.com)$")
+    # Validate email provider (Gmail-only)
+    email_pattern = re.compile(r"^[^@\s]+@gmail\.com$")
     if not email_pattern.match(norm_email):
-        raise HTTPException(status_code=400, detail="Only Gmail, Outlook/Hotmail, or Yahoo email addresses are allowed")
+        raise HTTPException(status_code=400, detail="Only Gmail email addresses are allowed")
 
     # Validate name and department
     name = (user_data.name or "").strip()
@@ -135,9 +135,16 @@ def register(user_data: UserRegister, db: Session = Depends(database.get_db)):
 
     # 2. Validate password strength then hash
     pwd = user_data.password or ""
+    # At least 8 characters, one uppercase letter, one number, and one special character
     pwd_pattern = re.compile(r"^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$")
     if not pwd_pattern.match(pwd):
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters and include an uppercase letter, a number, and a special character")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Password must be at least 8 characters and include an uppercase "
+                "letter, a number, and a special character"
+            ),
+        )
     hashed_password = hash_password(pwd)
 
     # 3. Create new user object (store normalized email)
@@ -159,6 +166,20 @@ def register(user_data: UserRegister, db: Session = Depends(database.get_db)):
         print(f"Database save error during registration: {e}")
         # Return actual error detail to distinguish DB issues from duplicates
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
+    # 5. Log admin notification for new user registration
+    try:
+        log = models.AdminLog(
+            admin_id=user.id,  # actor is the newly registered user
+            action=f"New user registered: {user.name} ({user.email})",
+            target_id=user.id,
+            target_type="user",
+        )
+        db.add(log)
+        db.commit()
+    except Exception:
+        # Do not block registration if logging fails
+        db.rollback()
 
     return {"message": "User created successfully", "user_id": user.id}
 

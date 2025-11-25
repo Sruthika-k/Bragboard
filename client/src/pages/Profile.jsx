@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Feed from '../components/Feed'
 import { fetchMe, fetchUsers, fetchDepartments, updateMe } from '../lib/api'
+import { isStrongPassword } from '../lib/validation'
+import { useToast } from '../components/Toast'
 
 export default function Profile() {
   const { id } = useParams()
@@ -19,6 +21,9 @@ export default function Profile() {
   const [nameDraft, setNameDraft] = useState('')
   const [pwdDraft, setPwdDraft] = useState({ current: '', next: '', confirm: '' })
   const [showSuccess, setShowSuccess] = useState(false)
+  const [pwdError, setPwdError] = useState('')
+  const [showPwd, setShowPwd] = useState({ current: false, next: false, confirm: false })
+  const toast = useToast()
 
   useEffect(() => {
     let mounted = true
@@ -85,15 +90,39 @@ export default function Profile() {
 
   const openPassModal = () => { if (!canEdit) return; setPwdDraft({ current: '', next: '', confirm: '' }); setShowPassModal(true) }
   const savePassword = async () => {
-    if (!pwdDraft.next.trim() || pwdDraft.next !== pwdDraft.confirm) return
+    const currentPwd = pwdDraft.current.trim()
+    const nextPwd = pwdDraft.next.trim()
+    const confirmPwd = pwdDraft.confirm.trim()
+
+    if (!currentPwd || !nextPwd || !confirmPwd) {
+      setPwdError('Please fill in all password fields.')
+      return
+    }
+    if (nextPwd !== confirmPwd) {
+      setPwdError('New password and confirm password must match.')
+      return
+    }
+    if (!isStrongPassword(nextPwd)) {
+      const msg = 'Password must be at least 8 characters and include an uppercase letter, a number, and a special character'
+      setPwdError(msg)
+      toast.showError(msg)
+      return
+    }
+
+    setPwdError('')
     setMsg('')
     try {
       setSaving(true)
-      await updateMe({ password: pwdDraft.next.trim() })
-      setMsg('Password updated')
+      await updateMe({ current_password: currentPwd, password: nextPwd })
+      const successMsg = 'Your password has been successfully updated.'
+      setMsg(successMsg)
       setShowSuccess(true)
-    } catch {
-      setMsg('Failed to update')
+      toast.showSuccess(successMsg)
+    } catch (e) {
+      const detail = e?.response?.data?.detail || 'Failed to update password.'
+      setMsg(detail)
+      setPwdError(detail)
+      toast.showError(detail)
     } finally {
       setSaving(false)
       setShowPassModal(false)
@@ -207,23 +236,92 @@ export default function Profile() {
             <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Current password</label>
-                <input type="password" className="w-full px-3 py-2 border rounded-md" value={pwdDraft.current} onChange={(e)=>setPwdDraft(p=>({...p, current: e.target.value}))} />
+                <div className="relative">
+                  <input
+                    type={showPwd.current ? 'text' : 'password'}
+                    className="w-full px-3 py-2 pr-10 border rounded-md"
+                    value={pwdDraft.current}
+                    onChange={(e)=>setPwdDraft(p=>({...p, current: e.target.value}))}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(p => ({ ...p, current: !p.current }))}
+                    className="absolute inset-y-0 right-0 px-3 text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    {showPwd.current ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">New password</label>
-                <input type="password" className="w-full px-3 py-2 border rounded-md" value={pwdDraft.next} onChange={(e)=>setPwdDraft(p=>({...p, next: e.target.value}))} />
+                <div className="relative">
+                  <input
+                    type={showPwd.next ? 'text' : 'password'}
+                    className="w-full px-3 py-2 pr-10 border rounded-md"
+                    value={pwdDraft.next}
+                    onChange={(e)=>setPwdDraft(p=>({...p, next: e.target.value }))}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(p => ({ ...p, next: !p.next }))}
+                    className="absolute inset-y-0 right-0 px-3 text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    {showPwd.next ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {pwdDraft.next && (
+                  <div className="mt-1 text-xs">
+                    {passwordStrengthLevel(pwdDraft.next) === 'weak' && (
+                      <span className="text-red-600">Password strength: Weak</span>
+                    )}
+                    {passwordStrengthLevel(pwdDraft.next) === 'medium' && (
+                      <span className="text-yellow-600">Password strength: Medium</span>
+                    )}
+                    {passwordStrengthLevel(pwdDraft.next) === 'strong' && (
+                      <span className="text-emerald-600">Password strength: Strong</span>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Confirm new password</label>
-                <input type="password" className="w-full px-3 py-2 border rounded-md" value={pwdDraft.confirm} onChange={(e)=>setPwdDraft(p=>({...p, confirm: e.target.value}))} />
+                <div className="relative">
+                  <input
+                    type={showPwd.confirm ? 'text' : 'password'}
+                    className="w-full px-3 py-2 pr-10 border rounded-md"
+                    value={pwdDraft.confirm}
+                    onChange={(e)=>setPwdDraft(p=>({...p, confirm: e.target.value }))}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd(p => ({ ...p, confirm: !p.confirm }))}
+                    className="absolute inset-y-0 right-0 px-3 text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    {showPwd.confirm ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
+              {pwdError && (
+                <div className="text-sm text-red-600">{pwdError}</div>
+              )}
               {pwdDraft.next && pwdDraft.confirm && pwdDraft.next !== pwdDraft.confirm && (
                 <div className="text-sm text-red-600">New password and confirm password do not match.</div>
               )}
               <div className="text-sm text-gray-600">Are you sure you want to save changes?</div>
               <div className="pt-1 flex items-center justify-end gap-2">
                 <button onClick={() => setShowPassModal(false)} className="px-4 py-2 rounded-md bg-gray-100 hover:bg-gray-200">Cancel</button>
-                <button onClick={savePassword} disabled={saving || !pwdDraft.next.trim() || pwdDraft.next !== pwdDraft.confirm} className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">Save</button>
+                <button
+                  onClick={savePassword}
+                  disabled={
+                    saving ||
+                    !pwdDraft.current.trim() ||
+                    !pwdDraft.next.trim() ||
+                    !pwdDraft.confirm.trim()
+                  }
+                  className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
               </div>
             </div>
           </div>

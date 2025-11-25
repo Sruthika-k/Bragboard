@@ -6,6 +6,9 @@
 /* Global UI safety: prevent selection/focus on non-editable elements */
 html, body, #root {
   height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
 }
 
 /* Disable text selection globally, but allow in form fields */

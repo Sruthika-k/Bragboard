@@ -13,6 +13,8 @@ import {
   adminDeleteComment,
 } from '../lib/api'
 import { fetchComments } from '../lib/api'
+import { useToast } from '../components/Toast'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 
 function TabButton({ active, onClick, children }) {
   return (
@@ -47,6 +49,8 @@ export default function Admin() {
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const toast = useToast()
+  const [confirmState, setConfirmState] = useState({ open: false, type: null, targetId: null, extra: null })
 
   useEffect(() => {
     let mounted = true
@@ -120,6 +124,24 @@ export default function Admin() {
 
   const maxCount = (arr) => arr.reduce((m, x) => Math.max(m, x.count), 0) || 1
   const userMap = useMemo(() => Object.fromEntries(users.map(u => [u.id, u])), [users])
+
+  const renderContentWithMentions = (text) => {
+    if (!text) return null
+    const parts = String(text).split(/(@\S+)/g)
+    return parts.map((part, idx) => {
+      if (part.startsWith('@') && part.length > 1) {
+        return (
+          <span
+            key={idx}
+            className="px-1 rounded bg-blue-50 text-blue-700 font-medium"
+          >
+            {part}
+          </span>
+        )
+      }
+      return <span key={idx}>{part}</span>
+    })
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -234,7 +256,10 @@ export default function Admin() {
                       <div className="text-gray-500">Sender: {userMap[s.sender_id]?.name || 'Unknown User'} · Dept: {s.department || '—'}</div>
                     </div>
                     <button onClick={() => navigate(`/dashboard?sid=${s.id}`)} className="px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200">View</button>
-                    <button onClick={async () => { try { await adminDeleteShoutout(s.id); setShoutouts(prev => prev.filter(x => x.id !== s.id)) } catch {} }} className="px-3 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100">Delete</button>
+                    <button
+                      onClick={() => setConfirmState({ open: true, type: 'shoutout', targetId: s.id, extra: null })}
+                      className="px-3 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100"
+                    >Delete</button>
                   </div>
                   {/* Inline comments management */}
                   <div className="pl-10">
@@ -259,11 +284,14 @@ export default function Admin() {
                                 <div className="text-sm text-gray-900 truncate">{c.user?.name || 'User'}</div>
                                 {c.created_at && <div className="text-xs text-gray-500">{new Date(c.created_at).toLocaleString()}</div>}
                               </div>
-                              <div className="text-sm text-gray-700">{c.content}</div>
+                              <div className="text-sm text-gray-700 break-words">{renderContentWithMentions(c.content)}</div>
                             </div>
                             <div className="flex items-center gap-2">
                               <button onClick={() => navigate(`/dashboard?sid=${s.id}`)} className="px-2 py-1 rounded-md bg-gray-100 hover:bg-gray-200 border">View</button>
-                              <button onClick={async () => { try { await adminDeleteComment(c.id); setCommentsByShoutout(p => ({ ...p, [s.id]: (p[s.id]||[]).filter(x => x.id !== c.id) })) } catch {} }} className="px-2 py-1 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100">Delete</button>
+                              <button
+                                onClick={() => setConfirmState({ open: true, type: 'comment', targetId: c.id, extra: { shoutoutId: s.id } })}
+                                className="px-2 py-1 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100"
+                              >Delete</button>
                             </div>
                           </div>
                         ))}
@@ -298,11 +326,22 @@ export default function Admin() {
                       <button onClick={() => navigate(`/dashboard?sid=${r.shoutout_id}`)} className="px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200">View</button>
                     )}
                     {r.comment_id ? (
-                      <button onClick={async () => { try { await adminDeleteComment(r.comment_id); alert('Resolved'); setReports(prev => prev.filter(x => x.id !== r.id)) } catch {} }} className="px-3 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100">Delete</button>
+                      <button
+                        onClick={() => setConfirmState({ open: true, type: 'report-comment', targetId: r.comment_id, extra: { reportId: r.id } })}
+                        className="px-3 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100"
+                      >Resolve</button>
                     ) : (
-                      r.shoutout_id && <button onClick={async () => { try { await adminDeleteShoutout(r.shoutout_id); alert('Resolved'); setReports(prev => prev.filter(x => x.id !== r.id)) } catch {} }} className="px-3 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100">Delete</button>
+                      r.shoutout_id && (
+                        <button
+                          onClick={() => setConfirmState({ open: true, type: 'report-shoutout', targetId: r.shoutout_id, extra: { reportId: r.id } })}
+                          className="px-3 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-100 hover:bg-red-100"
+                        >Resolve</button>
+                      )
                     )}
-                    <button onClick={async () => { try { const res = await adminDismissReport(r.id); alert(res?.message || 'Resolved'); setReports(prev => prev.filter(x => x.id !== r.id)) } catch {} }} className="px-3 py-1.5 rounded-md bg-gray-100 border border-gray-200 hover:bg-gray-200">Dismiss</button>
+                    <button
+                      onClick={() => setConfirmState({ open: true, type: 'report-dismiss', targetId: r.id, extra: null })}
+                      className="px-3 py-1.5 rounded-md bg-gray-100 border border-gray-200 hover:bg-gray-200"
+                    >Dismiss</button>
                   </div>
                 </div>
               ))}
@@ -310,6 +349,63 @@ export default function Admin() {
           </div>
         )}
       </main>
+      <ConfirmDialog
+        open={confirmState.open}
+        title="Confirm action"
+        message={
+          confirmState.type && confirmState.type.startsWith('report-')
+            ? 'Are you sure you want to perform this action?'
+            : 'Are you sure? This action cannot be undone.'
+        }
+        confirmText={confirmState.type === 'report-dismiss' ? 'Dismiss' : 'Delete'}
+        cancelText="Cancel"
+        submitting={false}
+        onCancel={() => setConfirmState({ open: false, type: null, targetId: null, extra: null })}
+        onConfirm={async () => {
+          if (!confirmState.type || !confirmState.targetId) {
+            setConfirmState({ open: false, type: null, targetId: null, extra: null })
+            return
+          }
+          try {
+            if (confirmState.type === 'shoutout') {
+              await adminDeleteShoutout(confirmState.targetId)
+              setShoutouts(prev => prev.filter(x => x.id !== confirmState.targetId))
+              toast.showSuccess('Shout-out deleted')
+            } else if (confirmState.type === 'comment') {
+              await adminDeleteComment(confirmState.targetId)
+              const sid = confirmState.extra?.shoutoutId
+              if (sid) {
+                setCommentsByShoutout(p => ({ ...p, [sid]: (p[sid] || []).filter(x => x.id !== confirmState.targetId) }))
+              }
+              toast.showSuccess('Comment deleted')
+            } else if (confirmState.type === 'report-comment') {
+              await adminDeleteComment(confirmState.targetId)
+              const rid = confirmState.extra?.reportId
+              if (rid) {
+                setReports(prev => prev.filter(x => x.id !== rid))
+              }
+              toast.showSuccess('Comment deleted')
+            } else if (confirmState.type === 'report-shoutout') {
+              await adminDeleteShoutout(confirmState.targetId)
+              const rid = confirmState.extra?.reportId
+              if (rid) {
+                setReports(prev => prev.filter(x => x.id !== rid))
+              }
+              toast.showSuccess('Shout-out deleted')
+            } else if (confirmState.type === 'report-dismiss') {
+              const rid = confirmState.targetId
+              const res = await adminDismissReport(rid)
+              setReports(prev => prev.filter(x => x.id !== rid))
+              toast.showSuccess(res?.message || 'Report dismissed')
+            }
+          } catch (e) {
+            const msg = e?.response?.data?.detail || 'Failed to delete item.'
+            toast.showError(msg)
+          } finally {
+            setConfirmState({ open: false, type: null, targetId: null, extra: null })
+          }
+        }}
+      />
     </div>
   )
 }
