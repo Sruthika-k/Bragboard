@@ -12,6 +12,24 @@ def ensure_admin(user) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
 
 
+def extract_id_from_action(action: str):
+    """Best-effort extraction of a numeric user id from an AdminLog action string.
+
+    Looks for patterns like 'user #123' and returns the integer id when found.
+    """
+    import re
+
+    if not action:
+        return None
+    m = re.search(r"user #(\d+)", str(action))
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return None
+
+
 @router.get("/admin/users")
 def admin_users(db: Session = Depends(database.get_db), current_user = Depends(auth.get_current_user)):
     ensure_admin(current_user)
@@ -64,6 +82,14 @@ def admin_delete_shoutout(sid: int, db: Session = Depends(database.get_db), curr
         db.query(models.Report).filter(models.Report.shoutout_id == sid).delete()
     except Exception:
         db.rollback()
+    # Remove any admin logs tied to this shoutout
+    try:
+        db.query(models.AdminLog).filter(
+            models.AdminLog.target_type == "shoutout",
+            models.AdminLog.target_id == sid,
+        ).delete()
+    except Exception:
+        db.rollback()
     db.delete(s)
     db.commit()
     return {"message": "Shoutout deleted"}
@@ -78,6 +104,14 @@ def admin_delete_comment(cid: int, db: Session = Depends(database.get_db), curre
     # Remove reports related to this comment
     try:
         db.query(models.Report).filter(models.Report.comment_id == cid).delete()
+    except Exception:
+        db.rollback()
+    # Remove any admin logs tied to this comment
+    try:
+        db.query(models.AdminLog).filter(
+            models.AdminLog.target_type == "comment",
+            models.AdminLog.target_id == cid,
+        ).delete()
     except Exception:
         db.rollback()
     db.delete(c)
@@ -142,12 +176,59 @@ def admin_notifications(db: Session = Depends(database.get_db), current_user = D
     return {"items": items}
 
 
+@router.post("/admin/notifications/retrofix")
+def retrofix_notifications(db: Session = Depends(database.get_db), current_user = Depends(auth.get_current_user)):
+    """Retroactively infer target_type/target_id for legacy AdminLog entries.
+
+    This is intended as a one-off maintenance endpoint so old notifications
+    can be navigated correctly in the UI.
+    """
+    ensure_admin(current_user)
+
+    logs = db.query(models.AdminLog).all()
+    updated = 0
+    for log in logs:
+        # Only touch entries that are missing a target_type
+        if getattr(log, "target_type", None):
+            continue
+
+        text = (getattr(log, "action", "") or "").lower()
+
+        if "tag" in text:
+            # Tagging events typically refer to shoutouts; try to recover an id
+            log.target_type = "shoutout"
+            recovered_id = extract_id_from_action(log.action)
+            if recovered_id is not None:
+                log.target_id = recovered_id
+            # Normalize legacy wording like "you were tagged" / "user profile updated"
+            if "you were tagged" in text or "user profile updated" in text:
+                log.action = "Tagged in shoutout - You were tagged."
+            updated += 1
+        elif "profile" in text or "user" in text:
+            # Generic user/profile changes
+            log.target_type = "user"
+            if not getattr(log, "target_id", None):
+                log.target_id = getattr(log, "admin_id", None)
+            updated += 1
+
+    db.commit()
+    return {"updated": updated}
+
+
 @router.post("/admin/reports/{rid}/dismiss")
 def admin_dismiss_report(rid: int, db: Session = Depends(database.get_db), current_user = Depends(auth.get_current_user)):
     ensure_admin(current_user)
     r = db.query(models.Report).get(rid)
     if not r:
         raise HTTPException(status_code=404, detail="Report not found")
+    # Remove any admin logs tied to this report id
+    try:
+        db.query(models.AdminLog).filter(
+            models.AdminLog.target_type == "report",
+            models.AdminLog.target_id == rid,
+        ).delete()
+    except Exception:
+        db.rollback()
     db.delete(r)
     db.commit()
     return {"message": "Report dismissed"}

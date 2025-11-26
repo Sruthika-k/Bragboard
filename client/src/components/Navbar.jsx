@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { fetchDepartments, fetchMe, fetchFeed, fetchUsers, adminNotifications } from '../lib/api'
+import { fetchDepartments, fetchMe, fetchFeed, fetchUsers, adminNotifications, deleteNotification } from '../lib/api'
 
 export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
   const [departments, setDepartments] = useState([])
@@ -235,14 +235,56 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
                       try { localStorage.setItem(key, String(seenAt)) } catch {}
                       const tType = n.target_type
                       const tId = n.target_id || n.id
+                      const currentUser = me
 
-                      // Primary navigation based on target_type/target_id
+                      // Admins have strict routing rules and should not be sent to user profile pages
+                      if (currentUser && currentUser.role === 'admin') {
+                        const tt = tType
+                        const tid = tId
+
+                        if (tt === 'report' && tid) {
+                          navigate(`/admin?tab=reports&reportId=${tid}`)
+                          return
+                        }
+                        if (tt === 'shoutout' && tid) {
+                          navigate(`/dashboard?sid=${tid}`)
+                          return
+                        }
+                        if (tt === 'comment' && tid) {
+                          const parent = n.shoutout_id || n.parent_shoutout_id
+                          if (parent) {
+                            navigate(`/dashboard?sid=${parent}&highlightComment=${tid}`)
+                          } else {
+                            navigate('/dashboard')
+                          }
+                          return
+                        }
+                        if (tt === 'user' && tid) {
+                          navigate(`/admin?tab=users&userId=${tid}`)
+                          return
+                        }
+                        // Fallback for any other admin notification
+                        navigate('/admin')
+                        return
+                      }
+
+                      // Non-admin users: primary navigation based on target_type/target_id
                       if (tType === 'shoutout' && tId) {
                         navigate(`/dashboard?sid=${tId}`)
                         return
                       }
+                      if (tType === 'comment' && tId) {
+                        const parent = n.shoutout_id || n.parent_shoutout_id
+                        if (parent) {
+                          navigate(`/dashboard?sid=${parent}&highlightComment=${tId}`)
+                        } else {
+                          navigate('/dashboard')
+                        }
+                        return
+                      }
                       if (tType === 'report' && tId) {
-                        navigate(`/admin/reports/${tId}`)
+                        // Non-admins seeing report notifications (if any) can fall back to dashboard
+                        navigate('/dashboard')
                         return
                       }
                       if (tType === 'user' && tId) {
@@ -250,19 +292,7 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
                         return
                       }
 
-                      // Admin notifications: additional routing rules
-                      if (n._admin) {
-                        if (n.type === 'user_change' && n.target_type === 'user') {
-                          // Username/profile change: go to admin users view
-                          navigate('/admin?tab=users')
-                          return
-                        }
-                        // Fallback for admin notifications without explicit target
-                        navigate('/admin')
-                        return
-                      }
-
-                      // Fallback for regular feed notifications
+                      // Fallback for regular notifications without explicit target_type
                       if (tId) {
                         navigate(`/dashboard?sid=${tId}`)
                       } else {
@@ -281,9 +311,28 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
                           return initials(displayName)
                         })()}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-gray-900 line-clamp-2">{friendlyNotif(n)}</div>
-                        <div className="text-xs text-gray-500 mt-0.5">{timeAgo(n.created_at)}</div>
+                      <div className="flex-1 min-w-0 flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-sm text-gray-900 line-clamp-2">{friendlyNotif(n)}</div>
+                          <div className="text-xs text-gray-500 mt-0.5">{timeAgo(n.created_at)}</div>
+                        </div>
+                        {n.id && (
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              try {
+                                await deleteNotification(n.id)
+                                setNotifs(prev => prev.filter(x => x.id !== n.id))
+                              } catch {
+                                // best-effort; keep UI unchanged on error
+                              }
+                            }}
+                            className="text-xs text-gray-400 hover:text-red-500 ml-2"
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
                     </div>
                   </button>

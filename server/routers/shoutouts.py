@@ -95,12 +95,13 @@ def create_shoutout(
     try:
         sender_name = getattr(current_user, "name", None) or "Someone"
         for rid in (payload.recipient_ids or []):
-            if int(rid) == int(current_user.id):
+            rid_int = int(rid)
+            if rid_int == int(current_user.id):
                 continue
             db.add(
                 models.AdminLog(
                     admin_id=current_user.id,
-                    action=f"Tag event - {sender_name} tagged user #{rid} in a shoutout.",
+                    action=f"Tagged in shoutout - {sender_name} tagged user #{rid_int}.",
                     target_id=sh.id,
                     target_type="shoutout",
                 )
@@ -210,12 +211,13 @@ async def create_shoutout_with_image(
     try:
         sender_name = getattr(current_user, "name", None) or "Someone"
         for rid in rec_ids:
-            if int(rid) == int(current_user.id):
+            rid_int = int(rid)
+            if rid_int == int(current_user.id):
                 continue
             db.add(
                 models.AdminLog(
                     admin_id=current_user.id,
-                    action=f"Tag event - {sender_name} tagged user #{rid} in a shoutout.",
+                    action=f"Tagged in shoutout - {sender_name} tagged user #{rid_int}.",
                     target_id=sh.id,
                     target_type="shoutout",
                 )

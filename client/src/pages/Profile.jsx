@@ -25,6 +25,11 @@ export default function Profile() {
   const [showPwd, setShowPwd] = useState({ current: false, next: false, confirm: false })
   const toast = useToast()
 
+  const onPwdField = (key) => (e) => {
+    const v = e?.target?.value ?? ''
+    setPwdDraft(prev => ({ ...(prev || {}), [key]: v }))
+  }
+
   useEffect(() => {
     let mounted = true
     async function load() {
@@ -241,7 +246,7 @@ export default function Profile() {
                     type={showPwd.current ? 'text' : 'password'}
                     className="w-full px-3 py-2 pr-10 border rounded-md"
                     value={pwdDraft.current}
-                    onChange={(e)=>setPwdDraft(p=>({...p, current: e.target.value}))}
+                    onChange={onPwdField('current')}
                   />
                   <button
                     type="button"
@@ -259,7 +264,7 @@ export default function Profile() {
                     type={showPwd.next ? 'text' : 'password'}
                     className="w-full px-3 py-2 pr-10 border rounded-md"
                     value={pwdDraft.next}
-                    onChange={(e)=>setPwdDraft(p=>({...p, next: e.target.value }))}
+                    onChange={onPwdField('next')}
                   />
                   <button
                     type="button"
@@ -290,7 +295,7 @@ export default function Profile() {
                     type={showPwd.confirm ? 'text' : 'password'}
                     className="w-full px-3 py-2 pr-10 border rounded-md"
                     value={pwdDraft.confirm}
-                    onChange={(e)=>setPwdDraft(p=>({...p, confirm: e.target.value }))}
+                    onChange={onPwdField('confirm')}
                   />
                   <button
                     type="button"

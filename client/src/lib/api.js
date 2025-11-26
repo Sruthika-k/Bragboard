@@ -51,4 +51,12 @@ export const adminReports = async () => (await api.get('/admin/reports')).data
 export const adminDismissReport = async (rid) => (await api.post(`/admin/reports/${rid}/dismiss`)).data
 export const adminAnalytics = async () => (await api.get('/admin/analytics')).data
 export const adminDeleteComment = async (cid) => (await api.delete(`/admin/comments/${cid}`)).data
-export const adminNotifications = async () => (await api.get('/admin/notifications')).data
+export async function adminNotifications() {
+  const res = await api.get('/admin/notifications')
+  return res.data
+}
+
+export async function deleteNotification(id) {
+  const res = await api.delete(`/notifications/${id}`)
+  return res.data
+}

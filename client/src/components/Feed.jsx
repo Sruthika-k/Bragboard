@@ -17,6 +17,7 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
   const [openComments, setOpenComments] = useState({})
   const [openMenus, setOpenMenus] = useState({})
   const cardRefs = useRef({})
+  const didScrollRef = useRef(false)
   const navigate = useNavigate()
   const stop = (e) => { e.stopPropagation() }
   const toast = useToast()
@@ -104,19 +105,30 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
   // Scroll to a particular shoutout only when explicitly requested
   useEffect(() => {
     if (!scrollToId) return
+    if (didScrollRef.current) return
+
     const exists = filtered.some(item => item.id === scrollToId)
     if (!exists) return
 
     const el = cardRefs.current[scrollToId]
     if (!el) return
 
+    didScrollRef.current = true
     el.scrollIntoView({ behavior: 'smooth', block: 'start' })
     el.classList.add('ring-2', 'ring-indigo-400')
 
     setTimeout(() => {
       el.classList.remove('ring-2', 'ring-indigo-400')
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('sid')
+        url.searchParams.delete('highlightComment')
+        window.history.replaceState({}, '', url.toString())
+      } catch {
+        // ignore URL errors
+      }
     }, 1500)
-  }, [filtered.length])
+  }, [filtered.length, scrollToId])
 
   if (loading) return <div className="text-gray-500">Loading feed...</div>
   if (error) return <div className="text-red-600">{error}</div>
