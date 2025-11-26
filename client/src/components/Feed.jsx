@@ -101,17 +101,22 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
     })
   }, [items, senderId, taggedUserId, date])
 
-  // Scroll to a particular shoutout if requested
+  // Scroll to a particular shoutout only when explicitly requested
   useEffect(() => {
     if (!scrollToId) return
+    const exists = filtered.some(item => item.id === scrollToId)
+    if (!exists) return
+
     const el = cardRefs.current[scrollToId]
-    if (el && el.scrollIntoView) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      // briefly highlight
-      el.classList.add('ring-2', 'ring-indigo-400')
-      setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-400'), 1500)
-    }
-  }, [filtered, scrollToId])
+    if (!el) return
+
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    el.classList.add('ring-2', 'ring-indigo-400')
+
+    setTimeout(() => {
+      el.classList.remove('ring-2', 'ring-indigo-400')
+    }, 1500)
+  }, [filtered.length])
 
   if (loading) return <div className="text-gray-500">Loading feed...</div>
   if (error) return <div className="text-red-600">{error}</div>
@@ -129,7 +134,9 @@ export default function Feed({ department = 'all', senderId = null, taggedUserId
           star: me ? (reactors.star || []).some(u => u.id === me.id) : false,
         }
         const imageSrc = item.image_url
-          ? (item.image_url.startsWith('http') ? item.image_url : `${API_BASE_URL}${item.image_url}`)
+          ? item.image_url.startsWith('http')
+            ? item.image_url
+            : `${API_BASE_URL}${item.image_url}`
           : null
         return (
           <div

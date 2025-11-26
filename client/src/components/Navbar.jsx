@@ -80,7 +80,8 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
           const taggedInComments = Boolean(it.tagged_in_comments)
           return tagged || reactedToMine || commentedOnMine || taggedInComments
         }).slice(0, 5)
-        let items = filtered
+        // Attach explicit navigation targets for feed-based notifications
+        let items = filtered.map(it => ({ ...it, target_type: 'shoutout', target_id: it.id }))
 
         // Admin-specific notifications: profile changes and reports
         if (me && me.role === 'admin') {
@@ -226,26 +227,47 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
                     key={n.id || Math.random()}
                     onClick={() => {
                       setOpenNotif(false)
-                      // Admin notifications: route based on type/target_type
+                      // Mark notifications as seen immediately on click
+                      const seenAt = Date.now()
+                      setLastSeenAt(seenAt)
+                      setHasNew(false)
+                      const key = me ? `notif_last_seen_${me.id}` : 'notif_last_seen'
+                      try { localStorage.setItem(key, String(seenAt)) } catch {}
+                      const tType = n.target_type
+                      const tId = n.target_id || n.id
+
+                      // Primary navigation based on target_type/target_id
+                      if (tType === 'shoutout' && tId) {
+                        navigate(`/dashboard?sid=${tId}`)
+                        return
+                      }
+                      if (tType === 'report' && tId) {
+                        navigate(`/admin/reports/${tId}`)
+                        return
+                      }
+                      if (tType === 'user' && tId) {
+                        navigate(`/profile/${tId}`)
+                        return
+                      }
+
+                      // Admin notifications: additional routing rules
                       if (n._admin) {
-                        if (n.type === 'report') {
-                          const rid = n.id ? String(n.id) : ''
-                          const search = rid ? `?tab=reports&reportId=${encodeURIComponent(rid)}` : '?tab=reports'
-                          navigate(`/admin${search}`)
-                          return
-                        }
                         if (n.type === 'user_change' && n.target_type === 'user') {
-                          // Username/profile change: do not treat as shoutout; go to admin users view
+                          // Username/profile change: go to admin users view
                           navigate('/admin?tab=users')
                           return
                         }
-                        // Fallback for other admin notifications
+                        // Fallback for admin notifications without explicit target
                         navigate('/admin')
                         return
                       }
 
-                      // Regular feed notifications still navigate to a specific shoutout if present
-                      n?.id ? navigate(`/dashboard?sid=${n.id}`) : navigate('/dashboard')
+                      // Fallback for regular feed notifications
+                      if (tId) {
+                        navigate(`/dashboard?sid=${tId}`)
+                      } else {
+                        navigate('/dashboard')
+                      }
                     }}
                     className="w-full text-left p-3 hover:bg-gray-50"
                   >

@@ -4,8 +4,8 @@ from sqlalchemy.orm import relationship
 import enum
 from sqlalchemy import Column, Integer, String, DateTime, func
 
-# Use package-relative import for the database module
-from . import database 
+# Use package-level import for the database module
+from server import database 
 
 Base = database.Base
 

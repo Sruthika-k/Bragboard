@@ -4,13 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text, inspect, func
 
-from .. import database, models, auth
-from ..database import engine
+from server import database, models, auth
+from server.database import engine
 
 router = APIRouter()
 
 
-DEFAULT_DEPARTMENTS = ["Marketing", "Engineering", "HR", "Sales", "Finance"]
+DEFAULT_DEPARTMENTS = ["HR",
+    "Finance",
+    "Marketing",
+    "Product Development",
+    "Quality Assurance",
+    "Security"]
 
 
 @router.get("/")
@@ -33,24 +38,8 @@ def test_database(db: Session = Depends(database.get_db)):
 
 @router.get("/departments")
 def get_departments(db: Session = Depends(database.get_db)):
-    try:
-        if hasattr(models, "Department"):
-            rows = db.query(models.Department).all()
-            if not rows:
-                for name in DEFAULT_DEPARTMENTS:
-                    db.add(models.Department(name=name))
-                db.commit()
-                rows = db.query(models.Department).all()
-            return {"departments": [r.name for r in rows]}
-    except Exception:
-        db.rollback()
-
-    depts = sorted(
-        {u.department for u in db.query(models.User).all() if u.department}
-    )
-    if not depts:
-        depts = DEFAULT_DEPARTMENTS
-    return {"departments": depts}
+    # For now, always return the fixed default department list.
+    return {"departments": DEFAULT_DEPARTMENTS}
 
 
 @router.get("/shoutout/feed")

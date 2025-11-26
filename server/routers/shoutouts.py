@@ -8,7 +8,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile, File, F
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .. import database, models, auth
+from server import database, models, auth
 
 router = APIRouter()
 
@@ -65,6 +65,12 @@ def create_shoutout(
             status_code=400,
             detail="Select at least one recipient.",
         )
+    # Prevent self-tagging
+    if any(int(rid) == int(current_user.id) for rid in (payload.recipient_ids or [])):
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot tag yourself.",
+        )
     if not (current_user.department or "").strip():
         raise HTTPException(
             status_code=400,
@@ -84,6 +90,24 @@ def create_shoutout(
     for rid in (payload.recipient_ids or []):
         db.add(models.ShoutoutRecipient(shoutout_id=sh.id, recipient_id=rid))
     db.commit()
+
+    # Lightweight notifications for tagged recipients (re-using AdminLog)
+    try:
+        sender_name = getattr(current_user, "name", None) or "Someone"
+        for rid in (payload.recipient_ids or []):
+            if int(rid) == int(current_user.id):
+                continue
+            db.add(
+                models.AdminLog(
+                    admin_id=current_user.id,
+                    action=f"Tag event - {sender_name} tagged user #{rid} in a shoutout.",
+                    target_id=sh.id,
+                    target_type="shoutout",
+                )
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
 
     return {"message": "Shoutout created", "id": sh.id}
 
@@ -108,6 +132,27 @@ async def create_shoutout_with_image(
             detail="Please set your department before creating a shoutout",
         )
 
+    # Parse and validate recipient IDs
+    try:
+        rec_ids_raw = json.loads(recipient_ids or "[]")
+        rec_ids = [int(x) for x in rec_ids_raw]
+    except Exception:
+        rec_ids = []
+
+    if not rec_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Select at least one recipient.",
+        )
+
+    # Prevent self-tagging
+    if any(int(rid) == int(current_user.id) for rid in rec_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot tag yourself.",
+        )
+
+    # Validate file type and size
     allowed_types = {"image/jpeg", "image/png"}
     if file.content_type not in allowed_types:
         raise HTTPException(
@@ -122,36 +167,36 @@ async def create_shoutout_with_image(
             detail="Image file size too large.",
         )
 
+    # Ensure upload directory exists and save file safely
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to prepare upload directory. Please try again later.",
+        )
+
     name_root, ext = os.path.splitext(file.filename or "image")
     ext = ext.lower() or ".jpg"
     safe_name = f"shoutout_{int(time.time()*1000)}{ext}"
     path = os.path.join(UPLOAD_DIR, safe_name)
+
     try:
         with open(path, "wb") as f:
             f.write(data)
     except Exception:
         raise HTTPException(
             status_code=500,
-            detail="Failed to save image. Please try again",
+            detail="Failed to save image. Please try again later.",
         )
 
-    try:
-        rec_ids_raw = json.loads(recipient_ids or "[]")
-        rec_ids = [int(x) for x in rec_ids_raw]
-    except Exception:
-        rec_ids = []
-
-    if not rec_ids:
-        raise HTTPException(
-            status_code=400,
-            detail="Select at least one recipient.",
-        )
+    image_url = f"/uploads/{safe_name}"
 
     sh = models.Shoutout(
         sender_id=current_user.id,
         message=message,
         department=current_user.department,
-        image_url=f"/uploads/{safe_name}",
+        image_url=image_url,
     )
     db.add(sh)
     db.commit()
@@ -161,4 +206,22 @@ async def create_shoutout_with_image(
         db.add(models.ShoutoutRecipient(shoutout_id=sh.id, recipient_id=rid))
     db.commit()
 
-    return {"message": "Shoutout created", "id": sh.id}
+    # Lightweight notifications for tagged recipients (re-using AdminLog)
+    try:
+        sender_name = getattr(current_user, "name", None) or "Someone"
+        for rid in rec_ids:
+            if int(rid) == int(current_user.id):
+                continue
+            db.add(
+                models.AdminLog(
+                    admin_id=current_user.id,
+                    action=f"Tag event - {sender_name} tagged user #{rid} in a shoutout.",
+                    target_id=sh.id,
+                    target_type="shoutout",
+                )
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return {"id": sh.id, "image_url": image_url}

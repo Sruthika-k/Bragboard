@@ -1,15 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { API_BASE_URL } from '../config'
 import { normalizeEmail, isValidEmailForBackend, isStrongPassword } from '../lib/validation'
 import { useToast } from '../components/Toast'
+import { fetchDepartments } from '../lib/api'
 
 // --- CONFIGURATION ---
-const DEPARTMENTS = ['Marketing', 'Engineering', 'HR', 'Sales', 'Finance'];
+const DEFAULT_DEPARTMENTS = [
+  'HR',
+  'Finance',
+  'Marketing',
+  'Product Development',
+  'Quality Assurance',
+  'Security',
+];
 
 // --- UI COMPONENTS MOVED OUTSIDE FOR STABILITY ---
-const InputField = ({ label, name, type, value, onChange, placeholder, error, required = true }) => (
+const InputField = ({ label, name, type, value, onChange, onBlur, placeholder, error, required = true }) => (
   <div className="space-y-2">
     <label htmlFor={name} className="block text-sm font-medium text-gray-700">
       {label}
@@ -21,6 +29,7 @@ const InputField = ({ label, name, type, value, onChange, placeholder, error, re
       type={type}
       value={value}
       onChange={onChange}
+      onBlur={onBlur}
       placeholder={placeholder}
       required={required}
       className={`w-full px-4 py-3 rounded-xl border ${error ? 'border-red-500' : 'border-gray-200'} bg-white shadow-sm text-gray-900 placeholder-gray-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 hover:border-gray-300`}
@@ -32,7 +41,7 @@ const InputField = ({ label, name, type, value, onChange, placeholder, error, re
   </div>
 );
 
-const PasswordField = ({ value, onChange, error, showPassword, setShowPassword, isLoading }) => (
+const PasswordField = ({ value, onChange, onBlur, error, showPassword, setShowPassword, isLoading }) => (
   <div className="space-y-2">
     <label htmlFor="password" className="block text-sm font-medium text-gray-700">
       Password
@@ -45,6 +54,7 @@ const PasswordField = ({ value, onChange, error, showPassword, setShowPassword, 
         type={showPassword ? 'text' : 'password'}
         value={value}
         onChange={onChange}
+        onBlur={onBlur}
         placeholder="••••••••"
         required
         className={`w-full px-4 py-3 pr-12 rounded-xl border ${error ? 'border-red-500' : 'border-gray-200'} bg-white shadow-sm text-gray-900 placeholder-gray-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 hover:border-gray-300`}
@@ -84,11 +94,35 @@ export default function Signup() {
   const [passwordTouched, setPasswordTouched] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
+  const [departments, setDepartments] = useState(DEFAULT_DEPARTMENTS);
 
   const clearErrors = () => {
     setRegisterError({ name: '', email: '', password: '', department: '' });
     setFeedback({ message: '', isError: false });
   }
+  
+  const handleEmailBlur = () => {
+    // Only validate after user has typed something and left the field
+    const raw = registerState.email;
+    if (!raw.trim()) return;
+    const normalized = normalizeEmail(raw);
+    if (!normalized || !isValidEmailForBackend(normalized)) {
+      setRegisterError(prev => ({ ...prev, email: 'Please enter a valid email address' }));
+    } else if (registerError.email) {
+      // Clear stale error if now valid
+      setRegisterError(prev => ({ ...prev, email: '' }));
+    }
+  };
+
+  const handlePasswordBlur = () => {
+    const raw = registerState.password;
+    if (!raw) return;
+    if (!isStrongPassword(raw)) {
+      setRegisterError(prev => ({ ...prev, password: 'Password must contain uppercase letter, number, and special character' }));
+    } else if (registerError.password) {
+      setRegisterError(prev => ({ ...prev, password: '' }));
+    }
+  };
   
   // Unified handler for all state changes (including error clearing)
   const handleChange = (e) => {
@@ -106,6 +140,28 @@ export default function Signup() {
       setRegisterError(p => ({ ...p, [name]: '' }));
     }
   };
+
+  // Load departments from backend so signup always reflects current list
+  useEffect(() => {
+    let mounted = true
+    async function loadDepts() {
+      try {
+        const res = await fetchDepartments()
+        if (!mounted) return
+        const list = res?.departments || []
+        if (Array.isArray(list) && list.length > 0) {
+          setDepartments(list)
+        } else {
+          setDepartments(DEFAULT_DEPARTMENTS)
+        }
+      } catch {
+        if (!mounted) return
+        setDepartments(DEFAULT_DEPARTMENTS)
+      }
+    }
+    loadDepts()
+    return () => { mounted = false }
+  }, [])
   
   // --- API HANDLER ---
   const handleRegisterSubmit = async (e) => {
@@ -233,6 +289,7 @@ export default function Signup() {
             type="email"
             value={registerState.email}
             onChange={handleChange}
+            onBlur={handleEmailBlur}
             placeholder="you@example.com"
             error={registerError.email}
           />
@@ -240,6 +297,7 @@ export default function Signup() {
           <PasswordField
             value={registerState.password}
             onChange={handleChange}
+            onBlur={handlePasswordBlur}
             error={registerError.password}
             showPassword={showPassword}
             setShowPassword={setShowPassword}
@@ -263,7 +321,7 @@ export default function Signup() {
                 aria-invalid={registerError.department ? 'true' : 'false'}
               >
                 <option value="" disabled>Select your team's department</option>
-                {DEPARTMENTS.map(dept => (
+                {departments.map(dept => (
                   <option key={dept} value={dept}>{dept}</option>
                 ))}
               </select>

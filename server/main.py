@@ -2,8 +2,6 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 
-
-# REMOVED: from sqlalchemy.ext.asyncio import AsyncSession - We are using synchronous Session from database.py
 import os
 from fastapi.staticfiles import StaticFiles
 from . import database, models
@@ -27,11 +25,11 @@ def startup_event_handler():
 app = FastAPI(title="BragBoard API") 
 
 # Serve uploaded images (after app is created)
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
-try:
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+
+if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-except Exception:
-    pass
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 

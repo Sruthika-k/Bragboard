@@ -322,9 +322,16 @@ export default function Admin() {
                     <div className="text-gray-500">Shoutout: {r.shoutout_id || '—'} · Comment: {r.comment_id || '—'} · Reporter: {userMap[r.reported_by]?.name || 'Unknown User'} · Reported: {r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {r.shoutout_id && (
-                      <button onClick={() => navigate(`/dashboard?sid=${r.shoutout_id}`)} className="px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200">View</button>
-                    )}
+                    <button
+                      onClick={() => {
+                        if (r.comment_id && r.shoutout_id) {
+                          navigate(`/dashboard?sid=${r.shoutout_id}&highlightComment=${r.comment_id}`)
+                        } else if (r.shoutout_id) {
+                          navigate(`/dashboard?sid=${r.shoutout_id}`)
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 border border-gray-200"
+                    >View</button>
                     {r.comment_id ? (
                       <button
                         onClick={() => setConfirmState({ open: true, type: 'report-comment', targetId: r.comment_id, extra: { reportId: r.id } })}

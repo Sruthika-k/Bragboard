@@ -1,5 +1,5 @@
 from fastapi import APIRouter
 
-from .. import database, models, auth
+from server import database, models, auth
 
 router = APIRouter()

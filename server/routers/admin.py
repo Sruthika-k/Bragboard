@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from .. import database, models, auth
+from server import database, models, auth
 
 router = APIRouter()
 
@@ -126,6 +126,8 @@ def admin_notifications(db: Session = Depends(database.get_db), current_user = D
         {
             "type": "report",
             "id": r.id,
+            "target_type": "report",
+            "target_id": r.id,
             "shoutout_id": r.shoutout_id,
             "comment_id": r.comment_id,
             "reported_by": r.reported_by,

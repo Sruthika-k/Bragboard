@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .. import database, models, auth
+from server import database, models, auth
 
 router = APIRouter()
 
@@ -149,7 +149,7 @@ def update_me(
             db.add(
                 models.AdminLog(
                     admin_id=current_user.id,
-                    action="password_change",
+                    action="Password Changed - Your password was updated.",
                     target_id=current_user.id,
                     target_type="user",
                 )
@@ -158,4 +158,7 @@ def update_me(
         pass
 
     db.commit()
+    # Distinguish password-change response for clearer frontend handling
+    if password_changed and not name_changed:
+        return {"message": "Password updated successfully"}
     return {"message": "Profile updated"}

@@ -114,7 +114,7 @@ export default function Profile() {
     try {
       setSaving(true)
       await updateMe({ current_password: currentPwd, password: nextPwd })
-      const successMsg = 'Your password has been successfully updated.'
+      const successMsg = 'Password updated successfully.'
       setMsg(successMsg)
       setShowSuccess(true)
       toast.showSuccess(successMsg)

@@ -10,7 +10,7 @@ import os
 from passlib.context import CryptContext
 
 # Use package-relative imports for uvicorn server.main:app
-from . import database, models
+from server import database, models
 
 # -------------------
 # Load environment variables
@@ -171,7 +171,7 @@ def register(user_data: UserRegister, db: Session = Depends(database.get_db)):
     try:
         log = models.AdminLog(
             admin_id=user.id,  # actor is the newly registered user
-            action=f"New user registered: {user.name} ({user.email})",
+            action=f"New user registered - {user.name} joined.",
             target_id=user.id,
             target_type="user",
         )
