@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Feed from '../components/Feed'
 import { fetchMe, fetchUsers, fetchDepartments, updateMe } from '../lib/api'
-import { isStrongPassword } from '../lib/validation'
 import { useToast } from '../components/Toast'
 
 export default function Profile() {
@@ -23,6 +22,7 @@ export default function Profile() {
   const [showSuccess, setShowSuccess] = useState(false)
   const [pwdError, setPwdError] = useState('')
   const [showPwd, setShowPwd] = useState({ current: false, next: false, confirm: false })
+  const [pwdValidationMsg, setPwdValidationMsg] = useState('')
   const toast = useToast()
 
   const onPwdField = (key) => (e) => {
@@ -107,12 +107,11 @@ export default function Profile() {
       setPwdError('New password and confirm password must match.')
       return
     }
-    if (!isStrongPassword(nextPwd)) {
-      const msg = 'Password must be at least 8 characters and include an uppercase letter, a number, and a special character'
-      setPwdError(msg)
-      toast.showError(msg)
-      return
-    }
+    const pwd = nextPwd
+    if (pwd.length < 8) { setPwdError('Password must be at least 8 characters long.'); return }
+    if (!/[A-Z]/.test(pwd)) { setPwdError('Password must contain an uppercase letter.'); return }
+    if (!/\d/.test(pwd)) { setPwdError('Password must contain a number.'); return }
+    if (!/[^A-Za-z0-9]/.test(pwd)) { setPwdError('Password must contain a special character.'); return }
 
     setPwdError('')
     setMsg('')
@@ -121,16 +120,15 @@ export default function Profile() {
       await updateMe({ current_password: currentPwd, password: nextPwd })
       const successMsg = 'Password updated successfully.'
       setMsg(successMsg)
-      setShowSuccess(true)
       toast.showSuccess(successMsg)
+      setShowSuccess(true)
+      setShowPassModal(false)
     } catch (e) {
       const detail = e?.response?.data?.detail || 'Failed to update password.'
-      setMsg(detail)
       setPwdError(detail)
       toast.showError(detail)
     } finally {
       setSaving(false)
-      setShowPassModal(false)
     }
   }
 
@@ -160,7 +158,11 @@ export default function Profile() {
 
           {canEdit && (
             <div className="mt-6 grid md:grid-cols-2 gap-4">
-              {msg && <div className="md:col-span-2 text-sm {msg.includes('Failed') ? 'text-red-600' : 'text-emerald-700'}">{msg}</div>}
+              {msg && (
+                <div className={`md:col-span-2 text-sm ${msg.includes('Failed') ? 'text-red-600' : 'text-emerald-700'}`}>
+                  {msg}
+                </div>
+              )}
               <div className="md:col-span-2">
                 <label className="block text-sm text-gray-600 mb-1">Email</label>
                 <input className="w-full px-3 py-2 border rounded-md bg-gray-50 text-gray-600" value={user?.email || ''} readOnly />
@@ -265,6 +267,33 @@ export default function Profile() {
                     className="w-full px-3 py-2 pr-10 border rounded-md"
                     value={pwdDraft.next}
                     onChange={onPwdField('next')}
+                    onBlur={() => {
+                      const pwd = pwdDraft.next.trim()
+
+                      if (!pwd) {
+                        setPwdValidationMsg('')
+                        return
+                      }
+
+                      if (pwd.length < 8) {
+                        setPwdValidationMsg('Password must be at least 8 characters long.')
+                        return
+                      }
+                      if (!/[A-Z]/.test(pwd)) {
+                        setPwdValidationMsg('Password must contain at least one uppercase letter.')
+                        return
+                      }
+                      if (!/\d/.test(pwd)) {
+                        setPwdValidationMsg('Password must contain at least one number.')
+                        return
+                      }
+                      if (!/[^A-Za-z0-9]/.test(pwd)) {
+                        setPwdValidationMsg('Password must contain at least one special character.')
+                        return
+                      }
+
+                      setPwdValidationMsg('')
+                    }}
                   />
                   <button
                     type="button"
@@ -274,18 +303,8 @@ export default function Profile() {
                     {showPwd.next ? 'Hide' : 'Show'}
                   </button>
                 </div>
-                {pwdDraft.next && (
-                  <div className="mt-1 text-xs">
-                    {passwordStrengthLevel(pwdDraft.next) === 'weak' && (
-                      <span className="text-red-600">Password strength: Weak</span>
-                    )}
-                    {passwordStrengthLevel(pwdDraft.next) === 'medium' && (
-                      <span className="text-yellow-600">Password strength: Medium</span>
-                    )}
-                    {passwordStrengthLevel(pwdDraft.next) === 'strong' && (
-                      <span className="text-emerald-600">Password strength: Strong</span>
-                    )}
-                  </div>
+                {pwdValidationMsg && (
+                  <div className="text-sm text-red-600 mt-1">{pwdValidationMsg}</div>
                 )}
               </div>
               <div>

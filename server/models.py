@@ -82,3 +82,15 @@ class AdminLog(Base):
     target_id = Column(Integer)
     target_type = Column(String(50))
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    action = Column(Text)
+    target_type = Column(String(50), nullable=True)
+    target_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_read = Column(Integer, default=0)

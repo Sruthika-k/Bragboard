@@ -60,3 +60,8 @@ export async function deleteNotification(id) {
   const res = await api.delete(`/notifications/${id}`)
   return res.data
 }
+
+export async function markNotificationRead(id) {
+  const res = await api.post(`/notifications/read/${id}`)
+  return res.data
+}

@@ -104,6 +104,7 @@ def create_shoutout(
                     action=f"Tagged in shoutout - {sender_name} tagged user #{rid_int}.",
                     target_id=sh.id,
                     target_type="shoutout",
+                    type="tag",
                 )
             )
         db.commit()
@@ -220,6 +221,7 @@ async def create_shoutout_with_image(
                     action=f"Tagged in shoutout - {sender_name} tagged user #{rid_int}.",
                     target_id=sh.id,
                     target_type="shoutout",
+                    type="tag",
                 )
             )
         db.commit()

@@ -19,3 +19,13 @@ export function isStrongPassword(value) {
   if (!value) return false;
   return STRONG_PASSWORD_REGEX.test(String(value));
 }
+
+export function passwordStrengthLevel(pwd) {
+  if (!pwd || pwd.length < 8) return 'weak';
+  const hasUpper = /[A-Z]/.test(pwd);
+  const hasNumber = /\d/.test(pwd);
+  const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
+  if (hasUpper && hasNumber && hasSpecial && pwd.length >= 10) return 'strong';
+  if ((hasUpper && hasNumber) || (hasNumber && hasSpecial) || (hasUpper && hasSpecial)) return 'medium';
+  return 'weak';
+}

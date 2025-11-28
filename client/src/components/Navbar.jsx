@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { fetchDepartments, fetchMe, fetchFeed, fetchUsers, adminNotifications, deleteNotification } from '../lib/api'
+import { fetchDepartments, fetchMe, fetchFeed, fetchUsers, adminNotifications, deleteNotification, markNotificationRead } from '../lib/api'
 
 export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
   const [departments, setDepartments] = useState([])
@@ -88,10 +88,18 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
           try {
             const adminRes = await adminNotifications()
             const adminItems = (adminRes.items || [])
-              // Do not notify admin about their own profile changes
+              // Exclude ONLY admin’s own profile updates
               .filter(x => !(x.type === 'user_change' && x.target_id === me.id))
+              // Allow all types including "tag"
               .map((x) => ({ ...x, _admin: true }))
+            // Merge then sort by timestamp descending
             items = [...adminItems, ...items]
+              .filter(Boolean)
+              .sort((a, b) => {
+                const tA = a.created_at ? Date.parse(a.created_at) : 0
+                const tB = b.created_at ? Date.parse(b.created_at) : 0
+                return tB - tA
+              })
           } catch {}
         }
 
@@ -141,6 +149,12 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
     try {
       // Admin notifications
       if (item._admin) {
+        if (item.type === 'tag') {
+          return item.action || 'You were tagged in a shoutout.'
+        }
+        if (item.type === 'report') {
+          return 'A new report has been filed.'
+        }
         if (item.type === 'user_change') {
           // For user profile changes (including username updates), rely on target_type
           if (item.target_type === 'user') {
@@ -148,9 +162,6 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
             return item.action || 'User profile updated.'
           }
           return 'User profile updated.'
-        }
-        if (item.type === 'report') {
-          return 'A new report has been filed.'
         }
       }
 
@@ -225,7 +236,10 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
                 {notifs.map(n => (
                   <button
                     key={n.id || Math.random()}
-                    onClick={() => {
+                    onClick={async () => {
+                      if (n && n.id) {
+                        try { await markNotificationRead(n.id) } catch (e) { console.error(e) }
+                      }
                       setOpenNotif(false)
                       // Mark notifications as seen immediately on click
                       const seenAt = Date.now()
@@ -316,23 +330,6 @@ export default function Navbar({ selectedDept, onChangeDept, onLogout }) {
                           <div className="text-sm text-gray-900 line-clamp-2">{friendlyNotif(n)}</div>
                           <div className="text-xs text-gray-500 mt-0.5">{timeAgo(n.created_at)}</div>
                         </div>
-                        {n.id && (
-                          <button
-                            type="button"
-                            onClick={async (e) => {
-                              e.stopPropagation()
-                              try {
-                                await deleteNotification(n.id)
-                                setNotifs(prev => prev.filter(x => x.id !== n.id))
-                              } catch {
-                                // best-effort; keep UI unchanged on error
-                              }
-                            }}
-                            className="text-xs text-gray-400 hover:text-red-500 ml-2"
-                          >
-                            ✕
-                          </button>
-                        )}
                       </div>
                     </div>
                   </button>
